@@ -1,12 +1,1207 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenClaw 数据目录管理系统</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenClaw 数据目录管理系统</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+    }
+    .container { display: flex; min-height: 100vh; }
+
+    /* 侧边栏 */
+    .sidebar {
+      width: 240px;
+      background: #16213e;
+      padding: 20px 0;
+      border-right: 1px solid #0f3460;
+    }
+    .logo {
+      padding: 0 20px 20px;
+      font-size: 20px;
+      font-weight: bold;
+      color: #e94560;
+      border-bottom: 1px solid #0f3460;
+      margin-bottom: 20px;
+    }
+    .nav-item {
+      padding: 12px 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: background 0.2s;
+    }
+    .nav-item:hover { background: #0f3460; }
+    .nav-item.active { background: #e94560; color: white; }
+    .nav-icon { font-size: 18px; }
+
+    /* 主内容区 */
+    .main { flex: 1; padding: 30px; overflow-y: auto; }
+    .page { display: none; }
+    .page.active { display: block; }
+    .page-title { font-size: 28px; margin-bottom: 30px; color: #e94560; }
+
+    /* 卡片 */
+    .card {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border: 1px solid #0f3460;
+    }
+    .card-title {
+      font-size: 18px;
+      margin-bottom: 15px;
+      color: #e94560;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 表格 */
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #0f3460; }
+    th { color: #e94560; font-weight: 500; }
+    tr:hover { background: rgba(233, 69, 96, 0.1); }
+
+    /* 表单 */
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; color: #aaa; font-size: 14px; }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      background: #1a1a2e;
+      border: 1px solid #0f3460;
+      border-radius: 6px;
+      color: #eee;
+      font-size: 14px;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #e94560; }
+    textarea { min-height: 200px; font-family: 'Monaco', 'Consolas', monospace; font-size: 13px; }
+
+    /* 按钮 */
+    .btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+    .btn-primary { background: #e94560; color: white; }
+    .btn-primary:hover { background: #c73e54; }
+    .btn-secondary { background: #0f3460; color: #eee; }
+    .btn-secondary:hover { background: #1a4a7a; }
+    .btn-success { background: #4ecca3; color: #1a1a2e; }
+    .btn-danger { background: #ff6b6b; color: white; }
+    .btn-group { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
+    .btn-small { padding: 4px 8px; font-size: 12px; }
+
+    /* 状态标签 */
+    .status-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .status-running { background: #4ecca3; color: #1a1a2e; }
+    .status-stopped { background: #0f3460; color: #aaa; }
+    .status-error { background: #ff6b6b; color: white; }
+
+    /* 开关 */
+    .switch { position: relative; width: 50px; height: 26px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background: #0f3460; border-radius: 26px; transition: 0.3s;
+    }
+    .slider:before {
+      content: ""; position: absolute;
+      height: 20px; width: 20px; left: 3px; bottom: 3px;
+      background: white; border-radius: 50%; transition: 0.3s;
+    }
+    input:checked + .slider { background: #e94560; }
+    input:checked + .slider:before { transform: translateX(24px); }
+
+    /* 通知 */
+    .toast {
+      position: fixed; bottom: 20px; right: 20px;
+      padding: 15px 25px; border-radius: 8px;
+      color: white; font-size: 14px; z-index: 1000;
+      animation: slideIn 0.3s ease;
+    }
+    .toast.success { background: #4ecca3; color: #1a1a2e; }
+    .toast.error { background: #ff6b6b; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* 加载 */
+    .loading { text-align: center; padding: 40px; color: #666; }
+    .loading::after {
+      content: ''; display: inline-block; width: 20px; height: 20px;
+      border: 2px solid #e94560; border-top-color: transparent;
+      border-radius: 50%; animation: spin 1s linear infinite;
+      margin-left: 10px; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Grid布局 */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+    @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+    /* 弹窗 */
+    .modal {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7); z-index: 1000;
+      align-items: center; justify-content: center;
+    }
+    .modal.show { display: flex; }
+    .modal-content {
+      background: #16213e; border-radius: 12px; padding: 20px;
+      width: 500px; max-width: 90%; max-height: 80vh; overflow-y: auto;
+    }
+
+    /* 复选框组 */
+    .checkbox-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: #1a1a2e;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .checkbox-item input { width: auto; }
+
+    /* 模块选择网格 */
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+      padding: 10px;
+      background: #1a1a2e;
+      border-radius: 6px;
+    }
+    .module-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      background: #0f3460;
+      border-radius: 6px;
+    }
+    .module-item input { width: auto; }
+    .module-item label { margin: 0; cursor: pointer; font-size: 13px; }
+  </style>
 </head>
 <body>
-    <h1>OpenClaw 数据目录管理系统</h1>
-    <p>TODO: 实现管理界面</p>
+  <div class="container">
+    <!-- 侧边栏 -->
+    <div class="sidebar">
+      <div class="logo">OpenClaw 目录管理</div>
+      <div class="nav-item active" data-page="directories"><span class="nav-icon">📋</span><span>目录列表</span></div>
+      <div class="nav-item" data-page="modules"><span class="nav-icon">🔧</span><span>模块复制</span></div>
+      <div class="nav-item" data-page="backup"><span class="nav-icon">📦</span><span>备份管理</span></div>
+      <div class="nav-item" data-page="github"><span class="nav-icon">🐙</span><span>GitHub部署</span></div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="main">
+      <!-- 目录列表页面 -->
+      <div class="page active" id="page-directories">
+        <h1 class="page-title">📋 目录列表</h1>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <span id="dirs-stats">加载中...</span>
+            <button class="btn btn-primary" onclick="showCreateModal()">➕ 新增目录</button>
+          </div>
+          <table>
+            <thead><tr><th>名称</th><th>路径</th><th>端口</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="dirs-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 模块复制页面 -->
+      <div class="page" id="page-modules">
+        <h1 class="page-title">🔧 模块复制</h1>
+        <div class="card">
+          <div class="card-title">复制模块到其他目录</div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>源目录</label>
+              <select id="module-source-dir">
+                <option value="">-- 请选择 --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>目标目录</label>
+              <select id="module-target-dir">
+                <option value="">-- 请选择 --</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>选择要复制的模块</label>
+            <div id="module-checkboxes" class="module-grid">
+              <!-- 动态加载模块列表 -->
+            </div>
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="copyModules()">📋 复制选中模块</button>
+            <button class="btn btn-secondary" onclick="selectAllModules()">全选</button>
+            <button class="btn btn-secondary" onclick="deselectAllModules()">取消全选</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">模块概览</div>
+          <div id="modules-overview" class="loading">加载中...</div>
+        </div>
+      </div>
+
+      <!-- 备份管理页面 -->
+      <div class="page" id="page-backup">
+        <h1 class="page-title">📦 备份管理</h1>
+        <div class="card">
+          <div class="card-title">选择要备份的目录</div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>数据目录</label>
+              <select id="backup-dir">
+                <option value="">-- 请选择 --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>保留数量</label>
+              <input type="number" id="backup-retain" value="10" min="1" max="100">
+            </div>
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="createBackup()">💾 立即备份</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">备份历史</div>
+          <div id="backup-history" class="loading">加载中...</div>
+        </div>
+
+        <!-- 恢复备份弹窗 -->
+        <div class="modal" id="restore-modal">
+          <div class="modal-content">
+            <div class="card-title">🔄 恢复备份</div>
+            <p style="margin-bottom:15px;color:#aaa;">确定要恢复此备份吗？当前数据将被覆盖。</p>
+            <div id="restore-info" style="background:#1a1a2e;padding:10px;border-radius:6px;margin-bottom:15px;font-family:monospace;font-size:12px;"></div>
+            <div class="btn-group">
+              <button class="btn btn-primary" onclick="confirmRestore()">确认恢复</button>
+              <button class="btn btn-secondary" onclick="closeRestoreModal()">取消</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- GitHub部署页面 -->
+      <div class="page" id="page-github">
+        <h1 class="page-title">🐙 GitHub部署</h1>
+        <div class="card">
+          <div class="card-title">预设仓库</div>
+          <div id="github-presets" class="loading">加载中...</div>
+        </div>
+        <div class="card">
+          <div class="card-title">部署预设仓库</div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>选择预设仓库</label>
+              <select id="github-preset-select">
+                <option value="">-- 请选择 --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>目标目录</label>
+              <select id="github-target-dir">
+                <option value="">-- 请选择 --</option>
+              </select>
+            </div>
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="deployPreset()">🚀 部署到目标目录</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">自定义仓库部署</div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>仓库地址 (HTTPS)</label>
+              <input type="text" id="custom-repo-url" placeholder="https://github.com/username/repo.git">
+            </div>
+            <div class="form-group">
+              <label>分支</label>
+              <input type="text" id="custom-repo-branch" value="main" placeholder="main">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>目标目录</label>
+            <select id="custom-target-dir">
+              <option value="">-- 请选择 --</option>
+            </select>
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-success" onclick="deployCustomRepo()">🚀 部署自定义仓库</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Git状态</div>
+          <div id="git-status" class="loading">请先选择目录</div>
+        </div>
+      </div>
+
+      <!-- 新增目录弹窗 -->
+      <div class="modal" id="create-modal">
+        <div class="modal-content">
+          <div class="card-title">➕ 新增数据目录</div>
+          <div class="form-group">
+            <label>目录名称</label>
+            <input type="text" id="new-dir-name" placeholder="例如: 测试环境">
+          </div>
+          <div class="form-group">
+            <label>初始化方式</label>
+            <div class="checkbox-group">
+              <label class="checkbox-item">
+                <input type="radio" name="init-mode" value="new" checked onchange="toggleInitMode()">
+                全新初始化
+              </label>
+              <label class="checkbox-item">
+                <input type="radio" name="init-mode" value="copy" onchange="toggleInitMode()">
+                从模板复制
+              </label>
+            </div>
+          </div>
+          <div id="copy-options" style="display:none;">
+            <div class="form-group">
+              <label>源目录</label>
+              <select id="copy-source"></select>
+            </div>
+            <div class="form-group">
+              <label>复制模块</label>
+              <div id="copy-modules" class="module-grid"></div>
+            </div>
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="createDirectory()">创建</button>
+            <button class="btn btn-secondary" onclick="closeCreateModal()">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 编辑目录弹窗 -->
+      <div class="modal" id="edit-modal">
+        <div class="modal-content">
+          <div class="card-title">✏️ 编辑目录: <span id="edit-dir-name"></span></div>
+          <input type="hidden" id="edit-dir-id">
+          <div class="form-group">
+            <label>显示名称</label>
+            <input type="text" id="edit-dir-display-name">
+          </div>
+          <div class="form-group">
+            <label>端口</label>
+            <input type="number" id="edit-dir-port">
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="saveDirectory()">💾 保存</button>
+            <button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '/api';
+    let directoriesData = [];
+
+    // 工具函数
+    function toast(msg, type = 'success') {
+      const t = document.createElement('div');
+      t.className = 'toast ' + type;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3000);
+    }
+
+    // 页面导航
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        const page = item.dataset.page;
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById('page-' + page).classList.add('active');
+        loadPageData(page);
+      });
+    });
+
+    function loadPageData(page) {
+      switch(page) {
+        case 'directories': loadDirectories(); break;
+        case 'modules': loadModulesPage(); break;
+        case 'backup': loadBackupConfig(); break;
+        case 'github': loadGithubPage(); break;
+      }
+    }
+
+    // ========== 目录列表 ==========
+    async function loadDirectories() {
+      try {
+        const res = await fetch(API_BASE + '/directories');
+        const data = await res.json();
+        directoriesData = data.directories || [];
+        renderDirectories();
+      } catch(e) {
+        document.getElementById('dirs-stats').textContent = '加载失败';
+        toast('加载目录列表失败: ' + e.message, 'error');
+      }
+    }
+
+    function renderDirectories() {
+      const tbody = document.getElementById('dirs-tbody');
+      tbody.innerHTML = '';
+
+      if (directoriesData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#666;">暂无目录，点击"新增目录"创建</td></tr>';
+        document.getElementById('dirs-stats').textContent = '共 0 个目录';
+        return;
+      }
+
+      document.getElementById('dirs-stats').textContent = '共 ' + directoriesData.length + ' 个目录';
+
+      directoriesData.forEach(dir => {
+        const statusClass = dir.status === 'running' ? 'status-running' :
+                           dir.status === 'error' ? 'status-error' : 'status-stopped';
+        const statusText = dir.status === 'running' ? '运行中' :
+                          dir.status === 'error' ? '错误' : '已停止';
+
+        tbody.innerHTML += '<tr>' +
+          '<td>' + (dir.displayName || dir.name) + '</td>' +
+          '<td style="font-family:monospace;font-size:12px;">' + dir.path + '</td>' +
+          '<td>' + (dir.port || '-') + '</td>' +
+          '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
+          '<td>' +
+            '<button class="btn btn-secondary btn-small" onclick="editDirectory(\'' + dir.name + '\')">编辑</button> ' +
+            '<button class="btn btn-success btn-small" onclick="startDirectory(\'' + dir.name + '\')">启动</button> ' +
+            '<button class="btn btn-secondary btn-small" onclick="stopDirectory(\'' + dir.name + '\')">停止</button> ' +
+            '<button class="btn btn-primary btn-small" onclick="restartDirectory(\'' + dir.name + '\')">重启</button> ' +
+            '<button class="btn btn-danger btn-small" onclick="deleteDirectory(\'' + dir.name + '\')">删除</button>' +
+          '</td>' +
+        '</tr>';
+      });
+    }
+
+    // ========== 新增目录弹窗 ==========
+    function showCreateModal() {
+      document.getElementById('new-dir-name').value = '';
+      document.querySelector('input[name="init-mode"][value="new"]').checked = true;
+      document.getElementById('copy-options').style.display = 'none';
+      loadCopySourceOptions();
+      document.getElementById('create-modal').classList.add('show');
+    }
+
+    function closeCreateModal() {
+      document.getElementById('create-modal').classList.remove('show');
+    }
+
+    function toggleInitMode() {
+      const mode = document.querySelector('input[name="init-mode"]:checked').value;
+      document.getElementById('copy-options').style.display = mode === 'copy' ? 'block' : 'none';
+      if (mode === 'copy') {
+        loadCopyModules();
+      }
+    }
+
+    async function loadCopySourceOptions() {
+      const select = document.getElementById('copy-source');
+      select.innerHTML = '<option value="">-- 请选择源目录 --</option>';
+      directoriesData.forEach(dir => {
+        select.innerHTML += '<option value="' + dir.name + '">' + (dir.displayName || dir.name) + '</option>';
+      });
+    }
+
+    async function loadCopyModules() {
+      const sourceDir = document.getElementById('copy-source').value;
+      const container = document.getElementById('copy-modules');
+      container.innerHTML = '<span style="color:#666;">请先选择源目录</span>';
+
+      if (!sourceDir) return;
+
+      try {
+        const res = await fetch(API_BASE + '/directories/' + sourceDir + '/modules');
+        const data = await res.json();
+        container.innerHTML = '';
+
+        const modules = data.modules || [];
+        if (modules.length === 0) {
+          container.innerHTML = '<span style="color:#666;">该目录暂无模块</span>';
+          return;
+        }
+
+        modules.forEach(mod => {
+          container.innerHTML += '<div class="module-item">' +
+            '<input type="checkbox" id="copy-mod-' + mod + '" value="' + mod + '" checked>' +
+            '<label for="copy-mod-' + mod + '">' + mod + '</label>' +
+          '</div>';
+        });
+      } catch(e) {
+        container.innerHTML = '<span style="color:#ff6b6b;">加载模块列表失败</span>';
+      }
+    }
+
+    document.getElementById('copy-source').addEventListener('change', loadCopyModules);
+
+    async function createDirectory() {
+      const name = document.getElementById('new-dir-name').value.trim();
+      const mode = document.querySelector('input[name="init-mode"]:checked').value;
+
+      if (!name) {
+        toast('请输入目录名称', 'error');
+        return;
+      }
+
+      const payload = { name, mode };
+
+      if (mode === 'copy') {
+        payload.source = document.getElementById('copy-source').value;
+        const modules = [];
+        document.querySelectorAll('#copy-modules input:checked').forEach(cb => {
+          modules.push(cb.value);
+        });
+        payload.modules = modules;
+
+        if (!payload.source) {
+          toast('请选择源目录', 'error');
+          return;
+        }
+      }
+
+      try {
+        const res = await fetch(API_BASE + '/directories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast('目录创建成功！');
+          closeCreateModal();
+          loadDirectories();
+        } else {
+          toast('创建失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('创建失败: ' + e.message, 'error');
+      }
+    }
+
+    // ========== 编辑目录 ==========
+    function editDirectory(name) {
+      const dir = directoriesData.find(d => d.name === name);
+      if (!dir) return;
+
+      document.getElementById('edit-dir-id').value = name;
+      document.getElementById('edit-dir-name').textContent = dir.displayName || name;
+      document.getElementById('edit-dir-display-name').value = dir.displayName || '';
+      document.getElementById('edit-dir-port').value = dir.port || '';
+
+      document.getElementById('edit-modal').classList.add('show');
+    }
+
+    function closeEditModal() {
+      document.getElementById('edit-modal').classList.remove('show');
+    }
+
+    async function saveDirectory() {
+      const name = document.getElementById('edit-dir-id').value;
+      const displayName = document.getElementById('edit-dir-display-name').value.trim();
+      const port = parseInt(document.getElementById('edit-dir-port').value) || null;
+
+      try {
+        const res = await fetch(API_BASE + '/directories/' + name, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ displayName, port })
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast('保存成功！');
+          closeEditModal();
+          loadDirectories();
+        } else {
+          toast('保存失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('保存失败: ' + e.message, 'error');
+      }
+    }
+
+    // ========== 目录操作 ==========
+    async function startDirectory(name) {
+      toast('正在启动 ' + name + '...');
+      try {
+        const res = await fetch(API_BASE + '/directories/' + name + '/start', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          toast(name + ' 启动成功！');
+          loadDirectories();
+        } else {
+          toast('启动失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('启动失败: ' + e.message, 'error');
+      }
+    }
+
+    async function stopDirectory(name) {
+      toast('正在停止 ' + name + '...');
+      try {
+        const res = await fetch(API_BASE + '/directories/' + name + '/stop', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          toast(name + ' 已停止！');
+          loadDirectories();
+        } else {
+          toast('停止失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('停止失败: ' + e.message, 'error');
+      }
+    }
+
+    async function restartDirectory(name) {
+      toast('正在重启 ' + name + '...');
+      try {
+        const res = await fetch(API_BASE + '/directories/' + name + '/restart', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          toast(name + ' 重启成功！');
+          loadDirectories();
+        } else {
+          toast('重启失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('重启失败: ' + e.message, 'error');
+      }
+    }
+
+    async function deleteDirectory(name) {
+      if (!confirm('确定要删除目录 "' + name + '" 吗？此操作不可恢复！')) return;
+
+      try {
+        const res = await fetch(API_BASE + '/directories/' + name, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          toast('目录已删除！');
+          loadDirectories();
+        } else {
+          toast('删除失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('删除失败: ' + e.message, 'error');
+      }
+    }
+
+    // 别名函数 - 保持与任务描述的函数名称兼容
+    const startDir = startDirectory;
+    const stopDir = stopDirectory;
+    const restartDir = restartDirectory;
+    const deleteDir = deleteDirectory;
+    const showEditModal = editDirectory;
+    const saveEdit = saveDirectory;
+    const loadModulesForCopy = loadModulesPage;
+    const loadGithubRepos = loadGithubPresets;
+    const deployPresetRepo = (repoId) => {
+      document.getElementById('github-preset-select').value = repoId;
+      deployPreset();
+    };
+
+    // ========== 模块复制页面 ==========
+    async function loadModulesPage() {
+      const sourceSelect = document.getElementById('module-source-dir');
+      const targetSelect = document.getElementById('module-target-dir');
+
+      sourceSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+      targetSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+
+      directoriesData.forEach(dir => {
+        sourceSelect.innerHTML += '<option value="' + dir.name + '">' + (dir.displayName || dir.name) + '</option>';
+        targetSelect.innerHTML += '<option value="' + dir.name + '">' + (dir.displayName || dir.name) + '</option>';
+      });
+
+      document.getElementById('module-checkboxes').innerHTML = '<span style="color:#666;">请选择源目录以加载模块列表</span>';
+      loadModulesOverview();
+    }
+
+    async function loadModulesOverview() {
+      const container = document.getElementById('modules-overview');
+      container.classList.add('loading');
+
+      try {
+        let html = '<table><thead><tr><th>目录</th><th>模块列表</th></tr></thead><tbody>';
+        for (const dir of directoriesData) {
+          try {
+            const res = await fetch(API_BASE + '/directories/' + dir.name + '/modules');
+            const data = await res.json();
+            const modules = data.modules || [];
+            html += '<tr><td>' + (dir.displayName || dir.name) + '</td><td>' +
+              (modules.length > 0 ? modules.join(', ') : '<span style="color:#666;">无模块</span>') + '</td></tr>';
+          } catch(e) {
+            html += '<tr><td>' + (dir.displayName || dir.name) + '</td><td><span style="color:#ff6b6b;">加载失败</span></td></tr>';
+          }
+        }
+        html += '</tbody></table>';
+        container.classList.remove('loading');
+        container.innerHTML = html;
+      } catch(e) {
+        container.classList.remove('loading');
+        container.innerHTML = '<p style="color:#ff6b6b;">加载模块概览失败</p>';
+      }
+    }
+
+    document.getElementById('module-source-dir').addEventListener('change', async function() {
+      const sourceDir = this.value;
+      const container = document.getElementById('module-checkboxes');
+      container.innerHTML = '<span style="color:#666;">加载中...</span>';
+
+      if (!sourceDir) {
+        container.innerHTML = '<span style="color:#666;">请选择源目录以加载模块列表</span>';
+        return;
+      }
+
+      try {
+        const res = await fetch(API_BASE + '/directories/' + sourceDir + '/modules');
+        const data = await res.json();
+        container.innerHTML = '';
+
+        const modules = data.modules || [];
+        if (modules.length === 0) {
+          container.innerHTML = '<span style="color:#666;">该目录暂无模块</span>';
+          return;
+        }
+
+        modules.forEach(mod => {
+          container.innerHTML += '<div class="module-item">' +
+            '<input type="checkbox" id="mod-' + mod + '" value="' + mod + '">' +
+            '<label for="mod-' + mod + '">' + mod + '</label>' +
+          '</div>';
+        });
+      } catch(e) {
+        container.innerHTML = '<span style="color:#ff6b6b;">加载模块列表失败</span>';
+      }
+    });
+
+    function selectAllModules() {
+      document.querySelectorAll('#module-checkboxes input[type="checkbox"]').forEach(cb => cb.checked = true);
+    }
+
+    function deselectAllModules() {
+      document.querySelectorAll('#module-checkboxes input[type="checkbox"]').forEach(cb => cb.checked = false);
+    }
+
+    async function copyModules() {
+      const sourceDir = document.getElementById('module-source-dir').value;
+      const targetDir = document.getElementById('module-target-dir').value;
+
+      if (!sourceDir || !targetDir) {
+        toast('请选择源目录和目标目录', 'error');
+        return;
+      }
+
+      if (sourceDir === targetDir) {
+        toast('源目录和目标目录不能相同', 'error');
+        return;
+      }
+
+      const modules = [];
+      document.querySelectorAll('#module-checkboxes input:checked').forEach(cb => {
+        modules.push(cb.value);
+      });
+
+      if (modules.length === 0) {
+        toast('请选择要复制的模块', 'error');
+        return;
+      }
+
+      toast('正在复制 ' + modules.length + ' 个模块...');
+
+      try {
+        // 使用新的 API 端点: POST /api/directories/:id/modules/copy
+        const res = await fetch(API_BASE + '/directories/' + sourceDir + '/modules/copy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetDir, modules })
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast('复制成功！共复制 ' + data.copied + ' 个模块');
+          loadModulesOverview();
+        } else {
+          toast('复制失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('复制失败: ' + e.message, 'error');
+      }
+    }
+
+    // ========== 备份管理 ==========
+    let currentBackupDir = null;
+    let currentRestoreFile = null;
+
+    async function loadBackupConfig() {
+      const select = document.getElementById('backup-dir');
+      select.innerHTML = '<option value="">-- 请选择 --</option>';
+
+      directoriesData.forEach(dir => {
+        select.innerHTML += '<option value="' + dir.name + '">' + (dir.displayName || dir.name) + '</option>';
+      });
+
+      // 监听目录选择变化
+      select.addEventListener('change', function() {
+        currentBackupDir = this.value;
+        if (currentBackupDir) {
+          loadBackupHistory(currentBackupDir);
+        } else {
+          document.getElementById('backup-history').innerHTML = '<p style="color:#666;">请选择目录查看备份历史</p>';
+        }
+      });
+
+      document.getElementById('backup-history').innerHTML = '<p style="color:#666;">请选择目录查看备份历史</p>';
+    }
+
+    async function loadBackupHistory(dirId) {
+      const container = document.getElementById('backup-history');
+      container.classList.add('loading');
+
+      try {
+        // 使用新的 API: GET /api/directories/:id/backups
+        const res = await fetch(API_BASE + '/directories/' + dirId + '/backups');
+        const data = await res.json();
+        container.classList.remove('loading');
+
+        const backups = data.backups || [];
+        if (!backups.length) {
+          container.innerHTML = '<p style="color:#666;">暂无备份记录</p>';
+          return;
+        }
+
+        let html = '<table><thead><tr><th>时间</th><th>文件名</th><th>大小</th><th>操作</th></tr></thead><tbody>';
+        backups.forEach(b => {
+          html += '<tr>' +
+            '<td>' + (b.time || b.createdAt || '-') + '</td>' +
+            '<td style="font-family:monospace;font-size:12px;">' + b.file + '</td>' +
+            '<td>' + (b.size || '-') + '</td>' +
+            '<td>' +
+              '<button class="btn btn-success btn-small" onclick="restoreBackup(\'' + dirId + '\', \'' + b.file + '\')">恢复</button> ' +
+              '<button class="btn btn-secondary btn-small" onclick="downloadBackup(\'' + dirId + '\', \'' + b.file + '\')">下载</button> ' +
+              '<button class="btn btn-danger btn-small" onclick="deleteBackup(\'' + dirId + '\', \'' + b.file + '\')">删除</button>' +
+            '</td>' +
+          '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch(e) {
+        container.classList.remove('loading');
+        container.innerHTML = '<p style="color:#ff6b6b;">加载备份历史失败: ' + e.message + '</p>';
+      }
+    }
+
+    async function createBackup() {
+      const dirId = document.getElementById('backup-dir').value;
+      const retain = parseInt(document.getElementById('backup-retain').value) || 10;
+
+      if (!dirId) {
+        toast('请选择要备份的目录', 'error');
+        return;
+      }
+
+      toast('正在创建备份...');
+
+      try {
+        // 使用新的 API: POST /api/directories/:id/backup
+        const res = await fetch(API_BASE + '/directories/' + dirId + '/backup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ retain })
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast('备份完成！文件: ' + data.file);
+          loadBackupHistory(dirId);
+        } else {
+          toast('备份失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('备份失败: ' + e.message, 'error');
+      }
+    }
+
+    function restoreBackup(dirId, file) {
+      currentBackupDir = dirId;
+      currentRestoreFile = file;
+      document.getElementById('restore-info').textContent = '目录: ' + dirId + '\n备份文件: ' + file;
+      document.getElementById('restore-modal').classList.add('show');
+    }
+
+    function closeRestoreModal() {
+      document.getElementById('restore-modal').classList.remove('show');
+      currentBackupDir = null;
+      currentRestoreFile = null;
+    }
+
+    async function confirmRestore() {
+      if (!currentBackupDir || !currentRestoreFile) {
+        toast('参数错误', 'error');
+        return;
+      }
+
+      toast('正在恢复备份...');
+
+      try {
+        // 使用新的 API: POST /api/directories/:id/restore
+        const res = await fetch(API_BASE + '/directories/' + currentBackupDir + '/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file: currentRestoreFile })
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast('恢复成功！');
+          closeRestoreModal();
+          loadBackupHistory(currentBackupDir);
+        } else {
+          toast('恢复失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('恢复失败: ' + e.message, 'error');
+      }
+    }
+
+    async function downloadBackup(dirId, file) {
+      // 直接打开下载链接
+      window.open(API_BASE + '/directories/' + dirId + '/backups/' + encodeURIComponent(file) + '/download', '_blank');
+      toast('开始下载: ' + file);
+    }
+
+    async function deleteBackup(dirId, file) {
+      if (!confirm('确定要删除备份 "' + file + '" 吗？此操作不可恢复！')) return;
+
+      try {
+        // 使用新的 API: DELETE /api/directories/:id/backups/:file
+        const res = await fetch(API_BASE + '/directories/' + dirId + '/backups/' + encodeURIComponent(file), {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast('备份已删除！');
+          loadBackupHistory(dirId);
+        } else {
+          toast('删除失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('删除失败: ' + e.message, 'error');
+      }
+    }
+
+    // ========== GitHub部署 ==========
+    let githubPresets = [];
+
+    async function loadGithubPage() {
+      const presetSelect = document.getElementById('github-preset-select');
+      const targetSelect = document.getElementById('github-target-dir');
+      const customTargetSelect = document.getElementById('custom-target-dir');
+
+      presetSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+      targetSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+      customTargetSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+
+      directoriesData.forEach(dir => {
+        targetSelect.innerHTML += '<option value="' + dir.name + '">' + (dir.displayName || dir.name) + '</option>';
+        customTargetSelect.innerHTML += '<option value="' + dir.name + '">' + (dir.displayName || dir.name) + '</option>';
+      });
+
+      // 加载预设仓库列表
+      loadGithubPresets();
+
+      // 监听预设选择变化，显示 Git 状态
+      targetSelect.addEventListener('change', function() {
+        if (this.value) {
+          loadGitStatus(this.value);
+        } else {
+          document.getElementById('git-status').innerHTML = '<p style="color:#666;">请选择目录查看 Git 状态</p>';
+        }
+      });
+
+      customTargetSelect.addEventListener('change', function() {
+        if (this.value) {
+          loadGitStatus(this.value);
+        }
+      });
+
+      document.getElementById('git-status').innerHTML = '<p style="color:#666;">请选择目录查看 Git 状态</p>';
+    }
+
+    async function loadGithubPresets() {
+      const container = document.getElementById('github-presets');
+      container.classList.add('loading');
+
+      try {
+        // 使用新的 API: GET /api/github/repos
+        const res = await fetch(API_BASE + '/github/repos');
+        const data = await res.json();
+        container.classList.remove('loading');
+
+        githubPresets = data.repos || [];
+        const presetSelect = document.getElementById('github-preset-select');
+        presetSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+
+        if (!githubPresets.length) {
+          container.innerHTML = '<p style="color:#666;">暂无预设仓库</p>';
+          return;
+        }
+
+        let html = '<table><thead><tr><th>仓库名称</th><th>地址</th><th>分支</th><th>描述</th></tr></thead><tbody>';
+        githubPresets.forEach((repo, idx) => {
+          presetSelect.innerHTML += '<option value="' + idx + '">' + repo.name + '</option>';
+          html += '<tr>' +
+            '<td>' + repo.name + '</td>' +
+            '<td style="font-family:monospace;font-size:12px;">' + repo.url + '</td>' +
+            '<td>' + (repo.branch || 'main') + '</td>' +
+            '<td>' + (repo.description || '-') + '</td>' +
+          '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch(e) {
+        container.classList.remove('loading');
+        container.innerHTML = '<p style="color:#ff6b6b;">加载预设仓库失败: ' + e.message + '</p>';
+      }
+    }
+
+    async function loadGitStatus(dirId) {
+      const container = document.getElementById('git-status');
+      container.classList.add('loading');
+
+      try {
+        const res = await fetch(API_BASE + '/directories/' + dirId + '/git/status');
+        const data = await res.json();
+        container.classList.remove('loading');
+
+        if (data.error) {
+          container.innerHTML = '<p style="color:#ff6b6b;">' + data.error + '</p>';
+          return;
+        }
+
+        let html = '<div style="font-family:monospace;white-space:pre-wrap;background:#1a1a2e;padding:15px;border-radius:6px;font-size:12px;">';
+        html += '<strong>分支:</strong> ' + (data.branch || '-') + '\n';
+        html += '<strong>状态:</strong> ' + (data.clean ? '干净' : '有未提交的更改') + '\n';
+        if (data.ahead) html += '<strong>领先:</strong> ' + data.ahead + ' 个提交\n';
+        if (data.behind) html += '<strong>落后:</strong> ' + data.behind + ' 个提交\n';
+        if (data.changes && data.changes.length) {
+          html += '\n<strong>变更文件:</strong>\n';
+          data.changes.forEach(c => { html += '  ' + c + '\n'; });
+        }
+        html += '</div>';
+        container.innerHTML = html;
+      } catch(e) {
+        container.classList.remove('loading');
+        container.innerHTML = '<p style="color:#ff6b6b;">加载Git状态失败</p>';
+      }
+    }
+
+    async function deployPreset() {
+      const presetIdx = document.getElementById('github-preset-select').value;
+      const targetDir = document.getElementById('github-target-dir').value;
+
+      if (presetIdx === '' || presetIdx === undefined) {
+        toast('请选择预设仓库', 'error');
+        return;
+      }
+
+      if (!targetDir) {
+        toast('请选择目标目录', 'error');
+        return;
+      }
+
+      const repo = githubPresets[parseInt(presetIdx)];
+      toast('正在部署 ' + repo.name + ' 到 ' + targetDir + '...');
+
+      try {
+        // 使用新的 API: POST /api/github/deploy
+        const res = await fetch(API_BASE + '/github/deploy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repoUrl: repo.url,
+            branch: repo.branch || 'main',
+            targetDir: targetDir
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast('部署成功！');
+          loadGitStatus(targetDir);
+        } else {
+          toast('部署失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('部署失败: ' + e.message, 'error');
+      }
+    }
+
+    async function deployCustomRepo() {
+      const repoUrl = document.getElementById('custom-repo-url').value.trim();
+      const branch = document.getElementById('custom-repo-branch').value.trim() || 'main';
+      const targetDir = document.getElementById('custom-target-dir').value;
+
+      if (!repoUrl) {
+        toast('请输入仓库地址', 'error');
+        return;
+      }
+
+      if (!targetDir) {
+        toast('请选择目标目录', 'error');
+        return;
+      }
+
+      toast('正在部署自定义仓库...');
+
+      try {
+        // 使用新的 API: POST /api/github/custom
+        const res = await fetch(API_BASE + '/github/custom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repoUrl: repoUrl,
+            branch: branch,
+            targetDir: targetDir
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast('部署成功！');
+          loadGitStatus(targetDir);
+        } else {
+          toast('部署失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('部署失败: ' + e.message, 'error');
+      }
+    }
+
+    // 初始化
+    loadDirectories();
+  </script>
 </body>
 </html>
