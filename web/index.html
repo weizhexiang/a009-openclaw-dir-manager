@@ -199,6 +199,24 @@
     }
     .module-item input { width: auto; }
     .module-item label { margin: 0; cursor: pointer; font-size: 13px; }
+
+    /* 导入目录项 */
+    .import-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+      background: #1a1a2e;
+      border-radius: 6px;
+      margin-bottom: 10px;
+    }
+    .import-item:hover {
+      background: #0f3460;
+    }
+    .import-item strong {
+      color: #e94560;
+    }
   </style>
 </head>
 <body>
@@ -430,13 +448,50 @@
         </div>
       </div>
 
+      <!-- 移除确认弹窗 -->
+      <div class="modal" id="remove-modal">
+        <div class="modal-content">
+          <div class="card-title" style="color:#ffa500;">⚠️ 从列表移除</div>
+          <p style="color:#aaa;margin-bottom:15px;">目录将从列表移除，但<span style="color:#4ecca3;">数据文件保留</span>，后续可通过"导入目录"重新导入。请输入目录名称 "<span id="remove-confirm-name" style="color:#ffa500;font-weight:bold;"></span>" 以确认。</p>
+          <input type="hidden" id="remove-dir-suffix">
+          <div class="form-group">
+            <label>请输入目录名称确认</label>
+            <input type="text" id="remove-confirm-input" placeholder="输入目录名称">
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-warning" id="remove-confirm-btn" onclick="confirmRemove()">📤 确认移除</button>
+            <button class="btn btn-secondary" onclick="closeRemoveModal()">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 删除确认弹窗 -->
+      <div class="modal" id="delete-modal">
+        <div class="modal-content">
+          <div class="card-title" style="color:#ff6b6b;">🗑️ 永久删除目录</div>
+          <p style="color:#aaa;margin-bottom:15px;">此操作将<span style="color:#ff6b6b;font-weight:bold;">永久删除目录及所有数据</span>，不可恢复！请输入目录名称 "<span id="delete-confirm-name" style="color:#ff6b6b;font-weight:bold;"></span>" 以确认。</p>
+          <input type="hidden" id="delete-dir-suffix">
+          <div class="form-group">
+            <label>请输入目录名称确认</label>
+            <input type="text" id="delete-confirm-input" placeholder="输入目录名称">
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-danger" id="delete-confirm-btn" onclick="confirmDelete()">🗑️ 确认删除</button>
+            <button class="btn btn-secondary" onclick="closeDeleteModal()">取消</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 导入目录弹窗 -->
       <div class="modal" id="import-modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width:600px;">
           <div class="card-title">📥 导入已有目录</div>
           <p style="color:#aaa;margin-bottom:15px;">扫描并列导入系统中已存在但未注册的 OpenClaw 数据目录</p>
-          <div id="import-list" class="loading">扫描中...</div>
-          <div class="btn-group">
+          <div id="import-list" style="min-height:100px;">
+            <span style="color:#666;">点击下方按钮开始扫描...</span>
+          </div>
+          <div class="btn-group" style="justify-content:space-between;">
+            <button class="btn btn-primary" onclick="scanDirectories()">🔍 重新扫描</button>
             <button class="btn btn-secondary" onclick="closeImportModal()">关闭</button>
           </div>
         </div>
@@ -519,7 +574,8 @@
             '<button class="btn btn-success btn-small" onclick="startDirectory(\'' + dir.suffix + '\')">启动</button> ' +
             '<button class="btn btn-secondary btn-small" onclick="stopDirectory(\'' + dir.suffix + '\')">停止</button> ' +
             '<button class="btn btn-primary btn-small" onclick="restartDirectory(\'' + dir.suffix + '\')">重启</button> ' +
-            '<button class="btn btn-danger btn-small" onclick="deleteDirectory(\'' + dir.suffix + '\')">删除</button>' +
+            '<button class="btn btn-warning btn-small" onclick="removeDirectory(\'' + dir.suffix + '\')">从列表移除此目录</button> ' +
+            '<button class="btn btn-danger btn-small" onclick="deleteDirectory(\'' + dir.suffix + '\')">删除此目录</button>' +
           '</td>' +
         '</tr>';
       });
@@ -590,10 +646,9 @@
         document.getElementById('copy-source').addEventListener('change', loadCopyModules);
 
     // ========== 导入目录功能 ==========
-    async function showImportModal() {
+    function showImportModal() {
       document.getElementById('import-modal').classList.add('show');
-      document.getElementById('import-list').innerHTML = '<span style="color:#666;">扫描中...</span>';
-      await scanDirectories();
+      // 不自动扫描，等待用户点击按钮
     }
 
     function closeImportModal() {
@@ -601,30 +656,42 @@
     }
 
     async function scanDirectories() {
+      const importList = document.getElementById('import-list');
+      importList.innerHTML = '<div class="loading">扫描中...</div>';
+
       try {
         const res = await fetch(API_BASE + '/directories/scan');
         const data = await res.json();
-        const importList = document.getElementById('import-list');
 
         if (!data.directories || data.directories.length === 0) {
-          importList.innerHTML = '<span style="color:#4ecca3;">✅ 没有发现可导入的目录</span>';
+          importList.innerHTML = '<div style="color:#4ecca3;padding:20px;text-align:center;">✅ 没有发现可导入的目录</div>';
           return;
         }
 
-        importList.innerHTML = '';
-        data.directories.forEach(dir => {
-          const item = document.createElement('div');
-          item.className = 'import-item';
-          item.innerHTML = '<div style="display:flex;justify-content:space-between:align-items:center;">' +
-            '<div>' +
-              '<strong>' + (dir.displayName || dir.name) + '</strong><br>' +
-              '<span style="color:#aaa;font-size:12px;">' + dir.path + '</span>' +
-            '</div>' +
-            '<button class="btn btn-success btn-small" onclick="importDirectory(\'' + dir.suffix + '\', \'' + (dir.displayName || dir.name) + '\')">导入</button>';
-          importList.appendChild(item);
+        // 使用表格格式显示
+        let html = '<table style="width:100%;">' +
+          '<thead><tr style="color:#e94560;">' +
+            '<th style="width:50px;text-align:center;">序号</th>' +
+            '<th>目录名称</th>' +
+            '<th>目录路径</th>' +
+            '<th style="width:80px;text-align:center;">操作</th>' +
+          '</tr></thead><tbody>';
+
+        data.directories.forEach((dir, index) => {
+          html += '<tr>' +
+            '<td style="text-align:center;">' + (index + 1) + '</td>' +
+            '<td><strong>' + (dir.displayName || dir.name) + '</strong></td>' +
+            '<td style="font-family:monospace;font-size:12px;color:#aaa;">' + dir.path + '</td>' +
+            '<td style="text-align:center;">' +
+              '<button class="btn btn-success btn-small" onclick="importDirectory(\'' + dir.suffix + '\', \'' + (dir.displayName || dir.name) + '\')">导入</button>' +
+            '</td>' +
+          '</tr>';
         });
+
+        html += '</tbody></table>';
+        importList.innerHTML = html;
       } catch(e) {
-        document.getElementById('import-list').innerHTML = '<span style="color:#ff6b6b;">扫描失败: ' + e.message + '</span>';
+        importList.innerHTML = '<div style="color:#ff6b6b;padding:20px;text-align:center;">扫描失败: ' + e.message + '</div>';
       }
     }
 
@@ -789,17 +856,109 @@
       }
     }
 
-    async function deleteDirectory(suffix) {
-      // 根据 suffix 查找目录名称用于显示
+    // 待移除的目录信息（仅从列表移除，保留数据）
+    let pendingRemoveSuffix = null;
+    let pendingRemoveName = null;
+
+    // 待删除的目录信息（永久删除，包括数据）
+    let pendingDeleteSuffix = null;
+    let pendingDeleteName = null;
+
+    // ========== 移除目录（保留数据）==========
+    function removeDirectory(suffix) {
       const dir = directoriesData.find(d => String(d.suffix) === String(suffix));
-      const displayName = dir ? (dir.displayName || dir.name) : suffix;
-      if (!confirm('确定要删除目录 "' + displayName + '" 吗？此操作不可恢复！')) return;
+      if (!dir) return;
+
+      const displayName = dir.displayName || dir.name || suffix;
+
+      pendingRemoveSuffix = suffix;
+      pendingRemoveName = displayName;
+
+      document.getElementById('remove-confirm-name').textContent = displayName;
+      document.getElementById('remove-confirm-input').value = '';
+      document.getElementById('remove-confirm-btn').disabled = true;
+      document.getElementById('remove-modal').classList.add('show');
+
+      setTimeout(() => {
+        document.getElementById('remove-confirm-input').focus();
+      }, 100);
+    }
+
+    function closeRemoveModal() {
+      document.getElementById('remove-modal').classList.remove('show');
+      pendingRemoveSuffix = null;
+      pendingRemoveName = null;
+    }
+
+    async function confirmRemove() {
+      if (!pendingRemoveSuffix) return;
+
+      const inputName = document.getElementById('remove-confirm-input').value;
+      if (inputName !== pendingRemoveName) {
+        toast('输入的名称不匹配', 'error');
+        return;
+      }
+
+      const suffixToRemove = pendingRemoveSuffix;
+      closeRemoveModal();
 
       try {
-        const res = await fetch(API_BASE + '/directories/' + suffix, { method: 'DELETE' });
+        const res = await fetch(API_BASE + '/directories/' + suffixToRemove + '/remove', { method: 'POST' });
         const data = await res.json();
         if (data.success) {
-          toast('目录已删除！');
+          toast('目录已从列表移除！数据保留，可重新导入');
+          loadDirectories();
+        } else {
+          toast('移除失败: ' + data.error, 'error');
+        }
+      } catch(e) {
+        toast('移除失败: ' + e.message, 'error');
+      }
+    }
+
+    // ========== 删除目录（永久删除数据）==========
+    function deleteDirectory(suffix) {
+      const dir = directoriesData.find(d => String(d.suffix) === String(suffix));
+      if (!dir) return;
+
+      const displayName = dir.displayName || dir.name || suffix;
+
+      pendingDeleteSuffix = suffix;
+      pendingDeleteName = displayName;
+
+      document.getElementById('delete-confirm-name').textContent = displayName;
+      document.getElementById('delete-confirm-input').value = '';
+      document.getElementById('delete-confirm-btn').disabled = true;
+      document.getElementById('delete-modal').classList.add('show');
+
+      setTimeout(() => {
+        document.getElementById('delete-confirm-input').focus();
+      }, 100);
+    }
+
+    function closeDeleteModal() {
+      document.getElementById('delete-modal').classList.remove('show');
+      pendingDeleteSuffix = null;
+      pendingDeleteName = null;
+    }
+
+    async function confirmDelete() {
+      if (!pendingDeleteSuffix) return;
+
+      const inputName = document.getElementById('delete-confirm-input').value;
+      if (inputName !== pendingDeleteName) {
+        toast('输入的名称不匹配', 'error');
+        return;
+      }
+
+      const suffixToDelete = pendingDeleteSuffix;
+      closeDeleteModal();
+
+      try {
+        const res = await fetch(API_BASE + '/directories/' + suffixToDelete, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          toast('目录已永久删除！');
           loadDirectories();
         } else {
           toast('删除失败: ' + data.error, 'error');
@@ -808,6 +967,24 @@
         toast('删除失败: ' + e.message, 'error');
       }
     }
+
+    // 监听输入
+    document.addEventListener('DOMContentLoaded', function() {
+      const deleteInput = document.getElementById('delete-confirm-input');
+      if (deleteInput) {
+        deleteInput.addEventListener('input', function() {
+          const btn = document.getElementById('delete-confirm-btn');
+          btn.disabled = this.value !== pendingDeleteName;
+        });
+      }
+      const removeInput = document.getElementById('remove-confirm-input');
+      if (removeInput) {
+        removeInput.addEventListener('input', function() {
+          const btn = document.getElementById('remove-confirm-btn');
+          btn.disabled = this.value !== pendingRemoveName;
+        });
+      }
+    });
 
     // 别名函数 - 保持与任务描述的函数名称兼容
     const startDir = startDirectory;

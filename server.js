@@ -282,14 +282,47 @@ function createDirectory(name, options = {}) {
 }
 
 /**
- * 删除目录
+ * 从列表移除目录（保留数据）
+ * @param {string|number} suffix - 目录后缀
+ * @returns {object} - 操作结果
+ */
+function removeDirectory(suffix) {
+  const registry = readRegistry();
+
+  // 查找目录
+  const dirIndex = registry.directories.findIndex(d => String(d.suffix) === String(suffix));
+  if (dirIndex === -1) {
+    throw new Error(`Directory with suffix ${suffix} not found`);
+  }
+
+  // 检查是否正在运行
+  const status = getDirectoryStatus(suffix);
+  if (status === 'running') {
+    throw new Error(`Cannot remove running directory. Please stop it first.`);
+  }
+
+  // 删除 PID 文件
+  const pidFile = path.join(PID_DIR, `${suffix}.pid`);
+  if (fs.existsSync(pidFile)) {
+    fs.unlinkSync(pidFile);
+  }
+
+  // 从注册表移除（保留实际数据目录）
+  registry.directories.splice(dirIndex, 1);
+  writeRegistry(registry);
+
+  return { success: true, message: `Directory ${suffix} removed from list` };
+}
+
+/**
+ * 完全删除目录（包括数据）
  * @param {string|number} suffix - 目录后缀
  * @returns {object} - 操作结果
  */
 function deleteDirectory(suffix) {
   const registry = readRegistry();
 
-  // 查找目录 - 修复类型比较
+  // 查找目录
   const dirIndex = registry.directories.findIndex(d => String(d.suffix) === String(suffix));
   if (dirIndex === -1) {
     throw new Error(`Directory with suffix ${suffix} not found`);
@@ -301,8 +334,11 @@ function deleteDirectory(suffix) {
     throw new Error(`Cannot delete running directory. Please stop it first.`);
   }
 
-  // 删除目录内容
-  const dirPath = getDirectoryPath(suffix);
+  // 获取目录路径
+  const dir = registry.directories[dirIndex];
+  const dirPath = dir.path || getDirectoryPath(suffix);
+
+  // 删除实际数据目录
   if (fs.existsSync(dirPath)) {
     fs.rmSync(dirPath, { recursive: true, force: true });
   }
@@ -1284,6 +1320,7 @@ const API_HANDLERS = {
   },
 
   'DELETE /api/directories/:id': (params) => deleteDirectory(params.id),
+  'POST /api/directories/:id/remove': (params) => removeDirectory(params.id),
 
   'PUT /api/directories/:id': (params, body) => updateDirectory(params.id, body),
 
