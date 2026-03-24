@@ -581,41 +581,43 @@ function scanExistingDirectories() {
   const homeDir = HOME_DIR;
   const existingDirs = [];
 
-  // 扫描所有 .openclaw-* 格式的目录
+  // 扫描所有 .openclaw 格式的目录（包括默认目录和带后缀的目录）
   const entries = fs.readdirSync(homeDir, { withFileTypes: true });
 
   entries.forEach(entry => {
     const name = entry.name;
     if (name.startsWith('.openclaw') && entry.isDirectory()) {
-      // 跳过备份目录
-      if (name === '.openclaw-backups') return;
+      // 跳过备份目录和 PID 目录
+      if (name === '.openclaw-backups' || name === '.openclaw-pids') return;
 
       const fullPath = path.join(homeDir, name);
 
       // 提取 suffix
       let suffix = '';
+      let displayName = '';
       if (name === '.openclaw') {
         suffix = '';
+        displayName = '默认目录';
       } else if (name.startsWith('.openclaw-')) {
         suffix = name.replace('.openclaw-', '');
+        displayName = suffix;
       }
 
-      if (suffix !== '') {
-        // 检查是否已在注册表中
-        const registry = readRegistry();
-        const alreadyRegistered = registry.directories.some(d => d.suffix === suffix);
+      // 检查是否已在注册表中
+      const registry = readRegistry();
+      const alreadyRegistered = registry.directories.some(d => String(d.suffix) === String(suffix));
 
-        if (!alreadyRegistered) {
-          // 检查是否包含 openclaw.json
-          const configPath = path.join(fullPath, 'openclaw.json');
-          if (fs.existsSync(configPath)) {
-            existingDirs.push({
-              suffix: suffix,
-              name: name.replace('.openclaw', '').replace('-', ''),
-              path: fullPath,
-              status: 'stopped'
-            });
-          }
+      if (!alreadyRegistered) {
+        // 检查是否包含 openclaw.json
+        const configPath = path.join(fullPath, 'openclaw.json');
+        if (fs.existsSync(configPath)) {
+          existingDirs.push({
+            suffix: suffix,
+            name: displayName,
+            path: fullPath,
+            size: getDirectorySize(fullPath),
+            lastBackup: getLastBackupTime(suffix)
+          });
         }
       }
     }
