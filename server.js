@@ -182,16 +182,46 @@ function getDirectories() {
 /**
  * 创建新目录
  * @param {string} name - 目录名称
- * @param {string|null} templateSuffix - 模板目录后缀（可选）
- * @param {Array} modules - 要复制的模块列表（可选）
+ * @param {object} options - 可选配置
+ * @param {string|null} options.templateSuffix - 模板目录后缀
+ * @param {Array} options.modules - 要复制的模块列表
+ * @param {string|null} options.customPath - 自定义路径
+ * @param {number|null} options.customPort - 自定义端口
  * @returns {object} - 创建的目录信息
  */
-function createDirectory(name, templateSuffix = null, modules = []) {
+function createDirectory(name, options = {}) {
+  const { templateSuffix = null, modules = [], customPath = null, customPort = null } = options;
   const registry = readRegistry();
+
+  // 检查名称是否已存在
+  const nameExists = registry.directories.some(d => d.name === name || d.displayName === name);
+  if (nameExists) {
+    return { success: false, error: '名称已存在: ' + name };
+  }
 
   // 生成新的 suffix - 转换为字符串
   const suffix = String(registry.nextSuffix);
-  const dirPath = getDirectoryPath(suffix);
+
+  // 使用自定义路径或默认路径
+  const dirPath = customPath || getDirectoryPath(suffix);
+
+  // 检查路径是否已被注册
+  const pathInRegistry = registry.directories.some(d => d.path === dirPath);
+  if (pathInRegistry) {
+    return { success: false, error: '路径已被其他目录使用: ' + dirPath };
+  }
+
+  // 检查路径是否在文件系统中已存在
+  if (fs.existsSync(dirPath)) {
+    return { success: false, error: '路径已存在: ' + dirPath };
+  }
+
+  // 检查端口是否已被使用
+  const port = customPort || getPort(suffix);
+  const portInUse = registry.directories.some(d => d.port === port);
+  if (portInUse) {
+    return { success: false, error: '端口已被使用: ' + port };
+  }
 
   // 创建目录
   fs.mkdirSync(dirPath, { recursive: true });
@@ -232,19 +262,22 @@ function createDirectory(name, templateSuffix = null, modules = []) {
     suffix: suffix,
     name: name,
     path: dirPath,
-    port: getPort(suffix),
+    port: port,
     createdAt: new Date().toISOString(),
     templateFrom: templateSuffix || null
   };
 
   // 更新注册表
   registry.directories.push(dirInfo);
-  registry.nextSuffix = suffix + 1;
+  registry.nextSuffix = parseInt(suffix, 10) + 1;
   writeRegistry(registry);
 
   return {
-    ...dirInfo,
-    status: 'stopped'
+    success: true,
+    directory: {
+      ...dirInfo,
+      status: 'stopped'
+    }
   };
 }
 
@@ -285,6 +318,62 @@ function deleteDirectory(suffix) {
   writeRegistry(registry);
 
   return { success: true, message: `Directory ${suffix} deleted` };
+}
+
+/**
+ * 更新目录信息
+ * @param {string|number} suffix - 目录后缀
+ * @param {object} updates - 要更新的字段
+ * @returns {object} - 更新结果
+ */
+function updateDirectory(suffix, updates) {
+  const registry = readRegistry();
+  const dirIndex = registry.directories.findIndex(d => String(d.suffix) === String(suffix));
+
+  if (dirIndex === -1) {
+    return { success: false, error: `Directory with suffix ${suffix} not found` };
+  }
+
+  const dir = registry.directories[dirIndex];
+
+  // 更新显示名称
+  if (updates.displayName !== undefined) {
+    const newName = updates.displayName.trim();
+    // 检查名称是否与其他目录重复
+    const nameExists = registry.directories.some((d, i) =>
+      i !== dirIndex && (d.name === newName || d.displayName === newName)
+    );
+    if (nameExists) {
+      return { success: false, error: '名称已被其他目录使用: ' + newName };
+    }
+    dir.displayName = newName || null;
+  }
+
+  // 更新端口
+  if (updates.port !== undefined && updates.port !== null) {
+    const newPort = parseInt(updates.port, 10);
+    if (isNaN(newPort) || newPort < 1024 || newPort > 65535) {
+      return { success: false, error: '端口号必须在 1024-65535 之间' };
+    }
+    // 检查端口是否已被其他目录使用
+    const portInUse = registry.directories.some((d, i) =>
+      i !== dirIndex && d.port === newPort
+    );
+    if (portInUse) {
+      return { success: false, error: `端口 ${newPort} 已被其他目录使用` };
+    }
+    dir.port = newPort;
+  }
+
+  writeRegistry(registry);
+
+  return {
+    success: true,
+    directory: {
+      ...dir,
+      status: getDirectoryStatus(suffix)
+    }
+  };
 }
 
 /**
@@ -424,16 +513,35 @@ function scanExistingDirectories() {
 function importDirectory(suffix, name) {
   const registry = readRegistry();
 
-  // 检查是否已存在
-  const exists = registry.directories.some(d => d.suffix === suffix);
-  if (exists) {
-    return { success: false, error: 'Directory already registered' };
+  // 检查 suffix 是否已注册
+  const suffixExists = registry.directories.some(d => String(d.suffix) === String(suffix));
+  if (suffixExists) {
+    return { success: false, error: '该后缀已被注册' };
+  }
+
+  // 检查名称是否已存在
+  const nameExists = registry.directories.some(d => d.name === name || d.displayName === name);
+  if (nameExists) {
+    return { success: false, error: '名称已存在: ' + name };
   }
 
   const dirPath = getDirectoryPath(suffix);
 
+  // 检查路径是否已注册
+  const pathExists = registry.directories.some(d => d.path === dirPath);
+  if (pathExists) {
+    return { success: false, error: '路径已被其他目录使用: ' + dirPath };
+  }
+
   if (!fs.existsSync(dirPath)) {
-    return { success: false, error: 'Directory does not exist' };
+    return { success: false, error: '目录不存在: ' + dirPath };
+  }
+
+  // 计算端口并检查是否重复
+  const port = getPort(suffix);
+  const portExists = registry.directories.some(d => d.port === port);
+  if (portExists) {
+    return { success: false, error: '端口已被使用: ' + port };
   }
 
   // 添加到注册表
@@ -441,7 +549,7 @@ function importDirectory(suffix, name) {
     suffix: suffix,
     name: name,
     path: dirPath,
-    port: getPort(suffix),
+    port: port,
     createdAt: new Date().toISOString(),
     templateFrom: null,
     status: 'stopped'
@@ -507,7 +615,7 @@ function getDirectoryInfo(suffix) {
 function startDirectory(suffix) {
   const dirPath = getDirectoryPath(suffix);
   const port = getPort(suffix);
-  const pidFile = path.join(PID_DIR, `openclaw-${suffix || 'default'}.pid`);
+  const pidFile = path.join(PID_DIR, `${suffix || 'default'}.pid`);
 
   // 检查目录是否存在
   if (!fs.existsSync(dirPath)) {
@@ -518,6 +626,24 @@ function startDirectory(suffix) {
   const status = getDirectoryStatus(suffix);
   if (status === 'running') {
     return { success: false, error: 'Directory is already running' };
+  }
+
+  // 先尝试运行 openclaw --version 检查是否可用
+  try {
+    const versionCheck = execSync(`${OPENCLAW_BIN} --version 2>&1`, {
+      encoding: 'utf8',
+      timeout: 5000
+    });
+    // 如果输出包含错误信息，说明有问题
+    if (versionCheck.includes('required') || versionCheck.includes('Error') || versionCheck.includes('error')) {
+      return { success: false, error: 'OpenClaw 启动失败: ' + versionCheck.trim() };
+    }
+  } catch (e) {
+    const errorMsg = e.stdout || e.stderr || e.message;
+    if (errorMsg.includes('required') || errorMsg.includes('Node.js')) {
+      return { success: false, error: 'OpenClaw 需要 Node.js v22.12+，当前版本不满足要求' };
+    }
+    // 如果只是命令不存在，继续尝试启动
   }
 
   // 启动进程
@@ -531,13 +657,13 @@ function startDirectory(suffix) {
   // 确保子进程独立运行
   child.unref();
 
-  // 记录 PID
+  // 创建 PID 目录并写入 PID 文件
   fs.mkdirSync(PID_DIR, { recursive: true });
   fs.writeFileSync(pidFile, child.pid.toString());
 
   // 更新注册表状态
   const registry = readRegistry();
-  const dir = registry.directories.find(d => d.suffix === suffix);
+  const dir = registry.directories.find(d => String(d.suffix) === String(suffix));
   if (dir) {
     dir.status = 'running';
     writeRegistry(registry);
@@ -552,7 +678,7 @@ function startDirectory(suffix) {
  * @returns {object} - 操作结果
  */
 function stopDirectory(suffix) {
-  const pidFile = path.join(PID_DIR, `openclaw-${suffix || 'default'}.pid`);
+  const pidFile = path.join(PID_DIR, `${suffix || 'default'}.pid`);
 
   // 检查 PID 文件是否存在
   if (!fs.existsSync(pidFile)) {
@@ -1147,12 +1273,19 @@ const API_HANDLERS = {
   'GET /api/directories': () => ({ directories: getDirectories() }),
 
   'POST /api/directories': (params, body) => {
-    const { name, copyFrom, modules } = body;
+    const { name, copyFrom, modules, customPath, customPort } = body;
     if (!name) return { success: false, error: 'Name is required' };
-    return createDirectory(name, copyFrom, modules);
+    return createDirectory(name, {
+      templateSuffix: copyFrom,
+      modules: modules,
+      customPath: customPath,
+      customPort: customPort
+    });
   },
 
   'DELETE /api/directories/:id': (params) => deleteDirectory(params.id),
+
+  'PUT /api/directories/:id': (params, body) => updateDirectory(params.id, body),
 
   'GET /api/directories/:id': (params) => getDirectoryInfo(params.id),
 

@@ -367,8 +367,18 @@
         <div class="modal-content">
           <div class="card-title">➕ 新增数据目录</div>
           <div class="form-group">
-            <label>目录名称</label>
+            <label>目录名称 <span style="color:#666;font-size:12px;">(必填)</span></label>
             <input type="text" id="new-dir-name" placeholder="例如: 测试环境">
+          </div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>自定义路径 <span style="color:#666;font-size:12px;">(可选，留空自动生成)</span></label>
+              <input type="text" id="new-dir-path" placeholder="例如: /home/waysh/.openclaw-custom">
+            </div>
+            <div class="form-group">
+              <label>端口号 <span style="color:#666;font-size:12px;">(可选，留空自动分配)</span></label>
+              <input type="number" id="new-dir-port" placeholder="例如: 13000" min="1024" max="65535">
+            </div>
           </div>
           <div class="form-group">
             <label>初始化方式</label>
@@ -505,11 +515,11 @@
           '<td>' + (dir.port || '-') + '</td>' +
           '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
           '<td>' +
-            '<button class="btn btn-secondary btn-small" onclick="editDirectory(\'' + dir.name + '\')">编辑</button> ' +
-            '<button class="btn btn-success btn-small" onclick="startDirectory(\'' + dir.name + '\')">启动</button> ' +
-            '<button class="btn btn-secondary btn-small" onclick="stopDirectory(\'' + dir.name + '\')">停止</button> ' +
-            '<button class="btn btn-primary btn-small" onclick="restartDirectory(\'' + dir.name + '\')">重启</button> ' +
-            '<button class="btn btn-danger btn-small" onclick="deleteDirectory(\'' + dir.name + '\')">删除</button>' +
+            '<button class="btn btn-secondary btn-small" onclick="editDirectory(\'' + dir.suffix + '\')">编辑</button> ' +
+            '<button class="btn btn-success btn-small" onclick="startDirectory(\'' + dir.suffix + '\')">启动</button> ' +
+            '<button class="btn btn-secondary btn-small" onclick="stopDirectory(\'' + dir.suffix + '\')">停止</button> ' +
+            '<button class="btn btn-primary btn-small" onclick="restartDirectory(\'' + dir.suffix + '\')">重启</button> ' +
+            '<button class="btn btn-danger btn-small" onclick="deleteDirectory(\'' + dir.suffix + '\')">删除</button>' +
           '</td>' +
         '</tr>';
       });
@@ -518,6 +528,8 @@
     // ========== 新增目录弹窗 ==========
     function showCreateModal() {
       document.getElementById('new-dir-name').value = '';
+      document.getElementById('new-dir-path').value = '';
+      document.getElementById('new-dir-port').value = '';
       document.querySelector('input[name="init-mode"][value="new"]').checked = true;
       document.getElementById('copy-options').style.display = 'none';
       loadCopySourceOptions();
@@ -563,9 +575,11 @@
         }
 
         modules.forEach(mod => {
+          // mod 可能是字符串或对象
+          const modName = typeof mod === 'string' ? mod : mod.name;
           container.innerHTML += '<div class="module-item">' +
-            '<input type="checkbox" id="copy-mod-' + mod + '" value="' + mod + '" checked>' +
-            '<label for="copy-mod-' + mod + '">' + mod + '</label>' +
+            '<input type="checkbox" id="copy-mod-' + modName + '" value="' + modName + '" checked>' +
+            '<label for="copy-mod-' + modName + '">' + modName + '</label>' +
           '</div>';
         });
       } catch(e) {
@@ -637,6 +651,8 @@
 
     async function createDirectory() {
       const name = document.getElementById('new-dir-name').value.trim();
+      const customPath = document.getElementById('new-dir-path').value.trim();
+      const customPort = document.getElementById('new-dir-port').value.trim();
       const mode = document.querySelector('input[name="init-mode"]:checked').value;
 
       if (!name) {
@@ -645,6 +661,10 @@
       }
 
       const payload = { name, mode };
+
+      // 添加自定义路径和端口
+      if (customPath) payload.customPath = customPath;
+      if (customPort) payload.customPort = parseInt(customPort, 10);
 
       if (mode === 'copy') {
         payload.source = document.getElementById('copy-source').value;
@@ -680,13 +700,13 @@
     }
 
     // ========== 编辑目录 ==========
-    function editDirectory(name) {
-      const dir = directoriesData.find(d => d.name === name);
+    function editDirectory(suffix) {
+      const dir = directoriesData.find(d => String(d.suffix) === String(suffix));
       if (!dir) return;
 
-      document.getElementById('edit-dir-id').value = name;
-      document.getElementById('edit-dir-name').textContent = dir.displayName || name;
-      document.getElementById('edit-dir-display-name').value = dir.displayName || '';
+      document.getElementById('edit-dir-id').value = suffix;
+      document.getElementById('edit-dir-name').textContent = dir.displayName || dir.name || suffix;
+      document.getElementById('edit-dir-display-name').value = dir.displayName || dir.name || '';
       document.getElementById('edit-dir-port').value = dir.port || '';
 
       document.getElementById('edit-modal').classList.add('show');
@@ -769,11 +789,14 @@
       }
     }
 
-    async function deleteDirectory(name) {
-      if (!confirm('确定要删除目录 "' + name + '" 吗？此操作不可恢复！')) return;
+    async function deleteDirectory(suffix) {
+      // 根据 suffix 查找目录名称用于显示
+      const dir = directoriesData.find(d => String(d.suffix) === String(suffix));
+      const displayName = dir ? (dir.displayName || dir.name) : suffix;
+      if (!confirm('确定要删除目录 "' + displayName + '" 吗？此操作不可恢复！')) return;
 
       try {
-        const res = await fetch(API_BASE + '/directories/' + name, { method: 'DELETE' });
+        const res = await fetch(API_BASE + '/directories/' + suffix, { method: 'DELETE' });
         const data = await res.json();
         if (data.success) {
           toast('目录已删除！');
