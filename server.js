@@ -729,12 +729,33 @@ function checkGatewayStatus() {
       // 端口连接失败，使用 systemd 状态
     }
 
+    // 读取 Gateway token
+    let token = null;
+    try {
+      if (IS_WINDOWS) {
+        const tokenResult = execSync('wsl bash -l -c "grep -o \'\"token\": *\"[^,]*\' ~/.openclaw/openclaw.json | head -1 | sed \'s/.*\"token\": *\"\\([^\"]*\\).*/\\1/\'"', {
+          encoding: 'utf8',
+          timeout: 5000
+        });
+        token = tokenResult.trim();
+      } else {
+        const tokenResult = execSync('grep -o \'"token": *"[^,]*\' ~/.openclaw/openclaw.json | head -1 | sed \'s/.*"token": *\"\\([^\"]*\\).*/\\1/\'', {
+          encoding: 'utf8',
+          timeout: 5000
+        });
+        token = tokenResult.trim();
+      }
+    } catch (e) {
+      // Token not found
+    }
+
     return {
       success: true,
       running: isRunning,
       port: gatewayPort,
       pid: pid || null,
-      url: isRunning ? `http://localhost:${gatewayPort}` : null
+      url: isRunning ? `http://localhost:${gatewayPort}` : null,
+      token: token || null
     };
   } catch (error) {
     return {

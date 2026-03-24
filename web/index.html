@@ -247,6 +247,9 @@
               <a id="gateway-link" href="#" target="_blank" class="btn" style="background:#4ecca3;color:#1a1a2e;text-decoration:none;display:none;">
                 🌐 访问 Gateway
               </a>
+              <button id="gateway-copy-token" class="btn btn-secondary btn-small" style="display:none;" onclick="copyGatewayToken()">
+                📋 复制 Token
+              </button>
             </div>
           </div>
         </div>
@@ -567,22 +570,42 @@
     async function checkGatewayStatus() {
       const statusEl = document.getElementById('gateway-status');
       const linkEl = document.getElementById('gateway-link');
+      const tokenBtn = document.getElementById('gateway-copy-token');
 
       try {
         const res = await fetch(API_BASE + '/gateway/status');
         const data = await res.json();
 
         if (data.running) {
-          statusEl.innerHTML = '<span style="color:#4ecca3;">● 运行中</span> <span style="color:#888;">端口: ' + data.port + '</span>';
+          let statusHtml = '<span style="color:#4ecca3;">● 运行中</span> <span style="color:#888;">端口: ' + data.port + '</span>';
+          if (data.token) {
+            statusHtml += '<br><span style="color:#888;font-size:12px;">Token: <code style="background:#333;padding:2px 6px;border-radius:3px;">' + data.token + '</code></span>';
+            tokenBtn.style.display = 'inline-block';
+            tokenBtn.dataset.token = data.token;
+          }
+          statusEl.innerHTML = statusHtml;
           linkEl.href = data.url;
           linkEl.style.display = 'inline-block';
         } else {
           statusEl.innerHTML = '<span style="color:#e94560;">● 未运行</span> <span style="color:#888;">请在 WSL 中运行: systemctl --user start openclaw-gateway</span>';
           linkEl.style.display = 'none';
+          tokenBtn.style.display = 'none';
         }
       } catch(e) {
         statusEl.innerHTML = '<span style="color:#e94560;">检测失败: ' + e.message + '</span>';
         linkEl.style.display = 'none';
+        tokenBtn.style.display = 'none';
+      }
+    }
+
+    function copyGatewayToken() {
+      const token = document.getElementById('gateway-copy-token').dataset.token;
+      if (token) {
+        navigator.clipboard.writeText(token).then(() => {
+          toast('Token 已复制到剪贴板');
+        }).catch(e => {
+          toast('复制失败: ' + e.message, 'error');
+        });
       }
     }
 
