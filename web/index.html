@@ -235,6 +235,22 @@
       <!-- 目录列表页面 -->
       <div class="page active" id="page-directories">
         <h1 class="page-title">📋 目录列表</h1>
+
+        <!-- Gateway 状态卡片 -->
+        <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);border:1px solid #0f3460;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:15px;">
+            <div>
+              <h3 style="margin:0 0 8px 0;color:#4ecca3;">🦞 OpenClaw Gateway</h3>
+              <div id="gateway-status" style="color:#888;">检测中...</div>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;">
+              <a id="gateway-link" href="#" target="_blank" class="btn" style="background:#4ecca3;color:#1a1a2e;text-decoration:none;display:none;">
+                🌐 访问 Gateway
+              </a>
+            </div>
+          </div>
+        </div>
+
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
             <span id="dirs-stats">加载中...</span>
@@ -540,9 +556,33 @@
         const data = await res.json();
         directoriesData = data.directories || [];
         renderDirectories();
+        checkGatewayStatus();
       } catch(e) {
         document.getElementById('dirs-stats').textContent = '加载失败';
         toast('加载目录列表失败: ' + e.message, 'error');
+      }
+    }
+
+    // 检测 Gateway 状态
+    async function checkGatewayStatus() {
+      const statusEl = document.getElementById('gateway-status');
+      const linkEl = document.getElementById('gateway-link');
+
+      try {
+        const res = await fetch(API_BASE + '/gateway/status');
+        const data = await res.json();
+
+        if (data.running) {
+          statusEl.innerHTML = '<span style="color:#4ecca3;">● 运行中</span> <span style="color:#888;">端口: ' + data.port + '</span>';
+          linkEl.href = data.url;
+          linkEl.style.display = 'inline-block';
+        } else {
+          statusEl.innerHTML = '<span style="color:#e94560;">● 未运行</span> <span style="color:#888;">请在 WSL 中运行: systemctl --user start openclaw-gateway</span>';
+          linkEl.style.display = 'none';
+        }
+      } catch(e) {
+        statusEl.innerHTML = '<span style="color:#e94560;">检测失败: ' + e.message + '</span>';
+        linkEl.style.display = 'none';
       }
     }
 
@@ -571,9 +611,6 @@
           '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
           '<td>' +
             '<button class="btn btn-secondary btn-small" onclick="editDirectory(\'' + dir.suffix + '\')">编辑</button> ' +
-            '<button class="btn btn-success btn-small" onclick="startDirectory(\'' + dir.suffix + '\')">启动</button> ' +
-            '<button class="btn btn-secondary btn-small" onclick="stopDirectory(\'' + dir.suffix + '\')">停止</button> ' +
-            '<button class="btn btn-primary btn-small" onclick="restartDirectory(\'' + dir.suffix + '\')">重启</button> ' +
             '<button class="btn btn-warning btn-small" onclick="removeDirectory(\'' + dir.suffix + '\')">从列表移除此目录</button> ' +
             '<button class="btn btn-danger btn-small" onclick="deleteDirectory(\'' + dir.suffix + '\')">删除此目录</button>' +
           '</td>' +

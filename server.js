@@ -23,6 +23,7 @@ const REGISTRY_FILE = path.join(HOME_DIR, '.openclaw-registry.json');
 const BACKUP_DIR = path.join(HOME_DIR, '.openclaw-backups');
 const PID_DIR = path.join(HOME_DIR, '.openclaw-pids');
 const OPENCLAW_BIN = 'openclaw';
+const IS_WINDOWS = process.platform === 'win32';
 
 // ============================================================================
 // 核心工具函数
@@ -644,6 +645,107 @@ function getDirectoryInfo(suffix) {
 // ============================================================================
 
 /**
+ * 检测 OpenClaw Gateway 状态
+ * @returns {object} - Gateway 状态信息
+ */
+function checkGatewayStatus() {
+  const gatewayPort = 18789; // OpenClaw Gateway 默认端口
+
+  try {
+    let isRunning = false;
+    let pid = null;
+
+    if (IS_WINDOWS) {
+      // Windows: 通过 WSL 检查 systemd 服务状态
+      try {
+        const result = execSync('wsl bash -l -c "systemctl --user is-active openclaw-gateway 2>/dev/null"', {
+          encoding: 'utf8',
+          timeout: 5000
+        });
+        isRunning = result.trim() === 'active';
+
+        if (isRunning) {
+          // 获取 PID
+          const pidResult = execSync('wsl bash -l -c "systemctl --user show openclaw-gateway --property=MainPID --value 2>/dev/null"', {
+            encoding: 'utf8',
+            timeout: 5000
+          });
+          pid = pidResult.trim();
+        }
+      } catch (e) {
+        isRunning = false;
+      }
+    } else {
+      // Linux: 直接检查 systemd 服务状态
+      try {
+        const result = execSync('systemctl --user is-active openclaw-gateway 2>/dev/null', {
+          encoding: 'utf8',
+          timeout: 5000
+        });
+        isRunning = result.trim() === 'active';
+
+        if (isRunning) {
+          const pidResult = execSync('systemctl --user show openclaw-gateway --property=MainPID --value 2>/dev/null', {
+            encoding: 'utf8',
+            timeout: 5000
+          });
+          pid = pidResult.trim();
+        }
+      } catch (e) {
+        isRunning = false;
+      }
+    }
+
+    // 尝试连接 Gateway 端口验证
+    try {
+      const net = require('net');
+      const socket = new net.Socket();
+      const portCheck = new Promise((resolve) => {
+        socket.setTimeout(2000);
+        socket.on('connect', () => {
+          socket.destroy();
+          resolve(true);
+        });
+        socket.on('error', () => resolve(false));
+        socket.on('timeout', () => {
+          socket.destroy();
+          resolve(false);
+        });
+        socket.connect(gatewayPort, 'localhost');
+      });
+
+      // 同步等待端口检查结果
+      require('child_process').execSync(`node -e "
+        const net = require('net');
+        const socket = new net.Socket();
+        socket.setTimeout(2000);
+        socket.on('connect', () => { socket.destroy(); process.exit(0); });
+        socket.on('error', () => process.exit(1));
+        socket.on('timeout', () => { socket.destroy(); process.exit(1); });
+        socket.connect(${gatewayPort}, 'localhost');
+      "`, { timeout: 3000 });
+      isRunning = true;
+    } catch (e) {
+      // 端口连接失败，使用 systemd 状态
+    }
+
+    return {
+      success: true,
+      running: isRunning,
+      port: gatewayPort,
+      pid: pid || null,
+      url: isRunning ? `http://localhost:${gatewayPort}` : null
+    };
+  } catch (error) {
+    return {
+      success: false,
+      running: false,
+      error: error.message
+    };
+  }
+}
+
+/**
  * 启动目录
  * @param {string|number} suffix - 目录后缀
  * @returns {object} - 操作结果
@@ -664,31 +766,49 @@ function startDirectory(suffix) {
     return { success: false, error: 'Directory is already running' };
   }
 
-  // 先尝试运行 openclaw --version 检查是否可用
-  try {
-    const versionCheck = execSync(`${OPENCLAW_BIN} --version 2>&1`, {
-      encoding: 'utf8',
-      timeout: 5000
-    });
-    // 如果输出包含错误信息，说明有问题
-    if (versionCheck.includes('required') || versionCheck.includes('Error') || versionCheck.includes('error')) {
-      return { success: false, error: 'OpenClaw 启动失败: ' + versionCheck.trim() };
-    }
-  } catch (e) {
-    const errorMsg = e.stdout || e.stderr || e.message;
-    if (errorMsg.includes('required') || errorMsg.includes('Node.js')) {
-      return { success: false, error: 'OpenClaw 需要 Node.js v22.12+，当前版本不满足要求' };
-    }
-    // 如果只是命令不存在，继续尝试启动
-  }
+  let child;
+  if (IS_WINDOWS) {
+    // Windows: 使用 wsl 运行 openclaw
+    // 将 Windows 路径转换为 WSL 路径
+    const wslDirPath = dirPath.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, drive) => `/mnt/${drive.toLowerCase()}`);
 
-  // 启动进程
-  const child = spawn(OPENCLAW_BIN, ['start', '--port', port.toString()], {
-    cwd: dirPath,
-    detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    shell: process.platform === 'win32' // Windows 需要 shell
-  });
+    // 使用 wsl 命令启动 openclaw gateway
+    const wslCmd = `cd ${wslDirPath} && openclaw gateway --port ${port}`;
+    console.log(`Starting OpenClaw via WSL: wsl -e bash -c "${wslCmd}"`);
+
+    child = spawn('wsl', ['-e', 'bash', '-c', wslCmd], {
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true
+    });
+  } else {
+    // Linux/macOS: 直接运行 openclaw
+    // 先尝试运行 openclaw --version 检查是否可用
+    try {
+      const versionCheck = execSync(`${OPENCLAW_BIN} --version 2>&1`, {
+        encoding: 'utf8',
+        timeout: 5000
+      });
+      if (versionCheck.includes('required') || versionCheck.includes('Error') || versionCheck.includes('error')) {
+        return { success: false, error: 'OpenClaw 启动失败: ' + versionCheck.trim() };
+      }
+    } catch (e) {
+      const errorMsg = e.stdout || e.stderr || e.message;
+      if (errorMsg.includes('required') || errorMsg.includes('Node.js')) {
+        return { success: false, error: 'OpenClaw 需要 Node.js v22.12+，当前版本不满足要求' };
+      }
+    }
+
+    // 使用 sh -c 确保参数正确传递
+    const cmd = `openclaw gateway --port ${port}`;
+    console.log(`Starting OpenClaw with shell: ${cmd}`);
+    child = spawn('sh', ['-c', cmd], {
+      cwd: dirPath,
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env }
+    });
+  }
 
   // 确保子进程独立运行
   child.unref();
@@ -1376,6 +1496,11 @@ const API_HANDLERS = {
   'POST /api/github/custom': (params, body) => {
     const { repoUrl, targetDir, targetPath, branch } = body;
     return customDeploy(repoUrl, targetDir, targetPath, branch);
+  },
+
+  // Gateway 状态检测
+  'GET /api/gateway/status': () => {
+    return checkGatewayStatus();
   }
 };
 
