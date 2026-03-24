@@ -9,6 +9,9 @@ const fs = require('fs');
 const path = require('path');
 const { execSync, spawn } = require('child_process');
 const os = require('os');
+const archiver = require('archiver');
+const zlib = require('zlib');
+const tar = require('tar');
 
 // ============================================================================
 // 常量定义
@@ -635,12 +638,12 @@ function getDirectoryLogs(suffix, lines = 100) {
 // ============================================================================
 
 /**
- * 创建目录备份
+ * 创建目录备份 (使用 archiver 库，跨平台兼容)
  * @param {string|number} suffix - 目录后缀
  * @param {string} description - 备份描述（可选）
- * @returns {object} - 备份信息
+ * @returns {Promise<object>} - 备份信息
  */
-function backupDirectory(suffix, description = '') {
+async function backupDirectory(suffix, description = '') {
   const dirPath = getDirectoryPath(suffix);
 
   // 检查目录是否存在
@@ -662,45 +665,62 @@ function backupDirectory(suffix, description = '') {
   // 确保备份目录存在
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
-  try {
-    if (process.platform === 'win32') {
-      // Windows: 使用 PowerShell 或 tar (如果通过 Git Bash/WSL 可用)
-      // 优先尝试使用 tar (Windows 10+ 内置支持)
-      const excludeArgs = '--exclude=logs --exclude=node_modules --exclude=backups --exclude="*.log"';
-      execSync(`tar -czf "${backupFile}" ${excludeArgs} -C "${dirPath}" .`, {
-        stdio: 'inherit',
-        timeout: 300000 // 5 分钟超时
+  // 排除的目录和文件
+  const excludePatterns = ['logs', 'node_modules', 'backups', '*.log'];
+
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(backupFile);
+    const archive = archiver('tar', {
+      gzip: true,
+      gzipOptions: { level: 9 }
+    });
+
+    output.on('close', () => {
+      const stats = fs.statSync(backupFile);
+      resolve({
+        success: true,
+        backup: {
+          file: backupName,
+          path: backupFile,
+          size: (stats.size / 1024 / 1024).toFixed(2) + ' MB',
+          description: description,
+          createdAt: new Date().toISOString(),
+          suffix: suffix || 'default'
+        }
       });
-    } else {
-      // Linux/macOS: 使用 tar
-      execSync(`tar -czf "${backupFile}" --exclude=logs --exclude=node_modules --exclude=backups --exclude='*.log' -C "${dirPath}" .`, {
-        timeout: 300000
-      });
+    });
+
+    archive.on('error', (err) => {
+      // 清理部分文件
+      if (fs.existsSync(backupFile)) {
+        try { fs.unlinkSync(backupFile); } catch (e) { /* ignore */ }
+      }
+      reject(new Error(`Backup failed: ${err.message}`));
+    });
+
+    archive.pipe(output);
+
+    // 添加目录内容到归档，排除指定项
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryName = entry.name;
+      const entryPath = path.join(dirPath, entryName);
+
+      // 检查是否应该排除
+      if (excludePatterns.includes(entryName) ||
+          (entryName.endsWith('.log') && excludePatterns.includes('*.log'))) {
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        archive.directory(entryPath, entryName);
+      } else {
+        archive.file(entryPath, { name: entryName });
+      }
     }
 
-    const stats = fs.statSync(backupFile);
-    return {
-      success: true,
-      backup: {
-        file: backupName,
-        path: backupFile,
-        size: (stats.size / 1024 / 1024).toFixed(2) + ' MB',
-        description: description,
-        createdAt: new Date().toISOString(),
-        suffix: suffix || 'default'
-      }
-    };
-  } catch (error) {
-    // 如果备份失败，清理可能创建的部分文件
-    if (fs.existsSync(backupFile)) {
-      try {
-        fs.unlinkSync(backupFile);
-      } catch (e) {
-        // 忽略清理错误
-      }
-    }
-    throw new Error(`Backup failed: ${error.message}`);
-  }
+    archive.finalize();
+  });
 }
 
 /**
@@ -767,12 +787,12 @@ function getBackupHistory(suffix) {
 }
 
 /**
- * 恢复备份
+ * 恢复备份 (使用 tar npm 库，跨平台兼容)
  * @param {string|number} suffix - 目标目录后缀
  * @param {string} backupFile - 备份文件名
- * @returns {object} - 恢复结果
+ * @returns {Promise<object>} - 恢复结果
  */
-function restoreBackup(suffix, backupFile) {
+async function restoreBackup(suffix, backupFile) {
   const dirPath = getDirectoryPath(suffix);
   const backupPath = path.join(BACKUP_DIR, backupFile);
 
@@ -800,20 +820,8 @@ function restoreBackup(suffix, backupFile) {
 
     if (currentFiles.length > 0) {
       // 创建恢复前的备份
-      const preRestoreBackupName = `${suffix || 'default'}_pre-restore_${Date.now()}.tar.gz`;
-      const preRestoreBackupPath = path.join(BACKUP_DIR, preRestoreBackupName);
-
-      if (process.platform === 'win32') {
-        execSync(`tar -czf "${preRestoreBackupPath}" -C "${dirPath}" .`, {
-          timeout: 300000
-        });
-      } else {
-        execSync(`tar -czf "${preRestoreBackupPath}" -C "${dirPath}" .`, {
-          timeout: 300000
-        });
-      }
-
-      preRestoreBackup = preRestoreBackupName;
+      preRestoreBackup = await backupDirectory(suffix, 'pre-restore');
+      preRestoreBackup = preRestoreBackup.backup.file;
     }
 
     // 清空目标目录
@@ -825,17 +833,12 @@ function restoreBackup(suffix, backupFile) {
       }
     }
 
-    // 解压备份
-    if (process.platform === 'win32') {
-      execSync(`tar -xzf "${backupPath}" -C "${dirPath}"`, {
-        stdio: 'inherit',
-        timeout: 300000
-      });
-    } else {
-      execSync(`tar -xzf "${backupPath}" -C "${dirPath}"`, {
-        timeout: 300000
-      });
-    }
+    // 使用 tar npm 包解压
+    await tar.x({
+      file: backupPath,
+      cwd: dirPath,
+      gzip: true
+    });
 
     return {
       success: true,
@@ -1061,7 +1064,7 @@ const CORS_HEADERS = {
  * API 路由处理器
  */
 const API_HANDLERS = {
-  'GET /api/directories': () => getDirectories(),
+  'GET /api/directories': () => ({ directories: getDirectories() }),
 
   'POST /api/directories': (params, body) => {
     const { name, copyFrom, modules } = body;
