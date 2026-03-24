@@ -148,6 +148,88 @@ function getDirectoryStatus(suffix) {
   }
 }
 
+/**
+ * 获取目录大小
+ * @param {string} dirPath - 目录路径
+ * @returns {string} - 格式化的大小字符串
+ */
+function getDirectorySize(dirPath) {
+  try {
+    if (!fs.existsSync(dirPath)) {
+      return '-';
+    }
+
+    let totalSize = 0;
+
+    function calculateSize(dir) {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          calculateSize(fullPath);
+        } else if (entry.isFile()) {
+          try {
+            const stats = fs.statSync(fullPath);
+            totalSize += stats.size;
+          } catch (e) {
+            // 忽略无法访问的文件
+          }
+        }
+      }
+    }
+
+    calculateSize(dirPath);
+
+    // 格式化大小
+    if (totalSize < 1024) {
+      return totalSize + ' B';
+    } else if (totalSize < 1024 * 1024) {
+      return (totalSize / 1024).toFixed(1) + ' KB';
+    } else if (totalSize < 1024 * 1024 * 1024) {
+      return (totalSize / (1024 * 1024)).toFixed(1) + ' MB';
+    } else {
+      return (totalSize / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+    }
+  } catch (error) {
+    return '-';
+  }
+}
+
+/**
+ * 获取目录最后备份时间
+ * @param {string|number} suffix - 目录后缀
+ * @returns {string|null} - 最后备份时间
+ */
+function getLastBackupTime(suffix) {
+  try {
+    const backupPrefix = `directory-${suffix || 'default'}`;
+    const files = fs.readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith(backupPrefix) && f.endsWith('.tar.gz'))
+      .map(f => {
+        const filePath = path.join(BACKUP_DIR, f);
+        const stats = fs.statSync(filePath);
+        return { file: f, mtime: stats.mtime };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+
+    if (files.length === 0) {
+      return null;
+    }
+
+    const lastBackup = files[0];
+    const date = new Date(lastBackup.mtime);
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (error) {
+    return null;
+  }
+}
+
 // ============================================================================
 // 辅助函数
 // ============================================================================
@@ -170,13 +252,14 @@ function ensureDirs() {
 
 /**
  * 获取所有目录列表
- * @returns {Array} - 目录列表，包含状态信息
+ * @returns {Array} - 目录列表，包含大小和最后备份时间
  */
 function getDirectories() {
   const registry = readRegistry();
   return registry.directories.map(dir => ({
     ...dir,
-    status: getDirectoryStatus(dir.suffix)
+    size: getDirectorySize(dir.path),
+    lastBackup: getLastBackupTime(dir.suffix)
   }));
 }
 

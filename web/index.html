@@ -261,7 +261,7 @@
             <button class="btn btn-secondary" onclick="showImportModal()">📥 导入目录</button>
           </div>
           <table>
-            <thead><tr><th>名称</th><th>路径</th><th>端口</th><th>状态</th><th>操作</th></tr></thead>
+            <thead><tr><th>名称</th><th>路径</th><th>端口</th><th>大小</th><th>最后备份</th><th>操作</th></tr></thead>
             <tbody id="dirs-tbody"></tbody>
           </table>
         </div>
@@ -614,7 +614,7 @@
       tbody.innerHTML = '';
 
       if (directoriesData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#666;">暂无目录，点击"新增目录"创建</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#666;">暂无目录，点击"新增目录"创建</td></tr>';
         document.getElementById('dirs-stats').textContent = '共 0 个目录';
         return;
       }
@@ -622,16 +622,12 @@
       document.getElementById('dirs-stats').textContent = '共 ' + directoriesData.length + ' 个目录';
 
       directoriesData.forEach(dir => {
-        const statusClass = dir.status === 'running' ? 'status-running' :
-                           dir.status === 'error' ? 'status-error' : 'status-stopped';
-        const statusText = dir.status === 'running' ? '运行中' :
-                          dir.status === 'error' ? '错误' : '已停止';
-
         tbody.innerHTML += '<tr>' +
           '<td>' + (dir.displayName || dir.name) + '</td>' +
           '<td style="font-family:monospace;font-size:12px;">' + dir.path + '</td>' +
           '<td>' + (dir.port || '-') + '</td>' +
-          '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
+          '<td>' + (dir.size || '-') + '</td>' +
+          '<td>' + (dir.lastBackup || '<span style="color:#666;">从未备份</span>') + '</td>' +
           '<td>' +
             '<button class="btn btn-secondary btn-small" onclick="editDirectory(\'' + dir.suffix + '\')">编辑</button> ' +
             '<button class="btn btn-warning btn-small" onclick="removeDirectory(\'' + dir.suffix + '\')">从列表移除此目录</button> ' +
