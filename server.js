@@ -890,11 +890,11 @@ function startDirectory(suffix) {
     });
   } else {
     // Linux/macOS: 直接运行 openclaw
-    // 先尝试运行 openclaw --version 检查是否可用
+    // 先尝试运行 openclaw --version 检查是否可用（使用 bash -l 加载 nvm 环境）
     try {
-      const versionCheck = execSync(`${OPENCLAW_BIN} --version 2>&1`, {
+      const versionCheck = execSync(`bash -l -c "${OPENCLAW_BIN} --version 2>&1"`, {
         encoding: 'utf8',
-        timeout: 5000
+        timeout: 10000
       });
       if (versionCheck.includes('required') || versionCheck.includes('Error') || versionCheck.includes('error')) {
         return { success: false, error: 'OpenClaw 启动失败: ' + versionCheck.trim() };
@@ -906,10 +906,10 @@ function startDirectory(suffix) {
       }
     }
 
-    // 使用 sh -c 确保参数正确传递，使用 --home 参数指定数据目录
+    // 使用 bash -l -c 确保加载 nvm 环境，使用 --home 参数指定数据目录
     const cmd = `openclaw gateway --port ${port} --home ${dirPath}`;
     console.log(`Starting OpenClaw with shell: ${cmd}`);
-    child = spawn('sh', ['-c', cmd], {
+    child = spawn('bash', ['-l', '-c', cmd], {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env }
