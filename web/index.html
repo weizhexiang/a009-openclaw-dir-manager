@@ -221,6 +221,7 @@
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
             <span id="dirs-stats">加载中...</span>
             <button class="btn btn-primary" onclick="showCreateModal()">➕ 新增目录</button>
+            <button class="btn btn-secondary" onclick="showImportModal()">📥 导入目录</button>
           </div>
           <table>
             <thead><tr><th>名称</th><th>路径</th><th>端口</th><th>状态</th><th>操作</th></tr></thead>
@@ -418,6 +419,18 @@
           </div>
         </div>
       </div>
+
+      <!-- 导入目录弹窗 -->
+      <div class="modal" id="import-modal">
+        <div class="modal-content">
+          <div class="card-title">📥 导入已有目录</div>
+          <p style="color:#aaa;margin-bottom:15px;">扫描并列导入系统中已存在但未注册的 OpenClaw 数据目录</p>
+          <div id="import-list" class="loading">扫描中...</div>
+          <div class="btn-group">
+            <button class="btn btn-secondary" onclick="closeImportModal()">关闭</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -560,7 +573,67 @@
       }
     }
 
-    document.getElementById('copy-source').addEventListener('change', loadCopyModules);
+        document.getElementById('copy-source').addEventListener('change', loadCopyModules);
+
+    // ========== 导入目录功能 ==========
+    async function showImportModal() {
+      document.getElementById('import-modal').classList.add('show');
+      document.getElementById('import-list').innerHTML = '<span style="color:#666;">扫描中...</span>';
+      await scanDirectories();
+    }
+
+    function closeImportModal() {
+      document.getElementById('import-modal').classList.remove('show');
+    }
+
+    async function scanDirectories() {
+      try {
+        const res = await fetch(API_BASE + '/directories/scan');
+        const data = await res.json();
+        const importList = document.getElementById('import-list');
+
+        if (!data.directories || data.directories.length === 0) {
+          importList.innerHTML = '<span style="color:#4ecca3;">✅ 没有发现可导入的目录</span>';
+          return;
+        }
+
+        importList.innerHTML = '';
+        data.directories.forEach(dir => {
+          const item = document.createElement('div');
+          item.className = 'import-item';
+          item.innerHTML = '<div style="display:flex;justify-content:space-between:align-items:center;">' +
+            '<div>' +
+              '<strong>' + (dir.displayName || dir.name) + '</strong><br>' +
+              '<span style="color:#aaa;font-size:12px;">' + dir.path + '</span>' +
+            '</div>' +
+            '<button class="btn btn-success btn-small" onclick="importDirectory(\'' + dir.suffix + '\', \'' + (dir.displayName || dir.name) + '\')">导入</button>';
+          importList.appendChild(item);
+        });
+      } catch(e) {
+        document.getElementById('import-list').innerHTML = '<span style="color:#ff6b6b;">扫描失败: ' + e.message + '</span>';
+      }
+    }
+
+    async function importDirectory(suffix, name) {
+      try {
+        const res = await fetch(API_BASE + '/directories/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ suffix, name })
+        });
+        const data = await res.json();
+
+        if (data.success || data.directory) {
+          toast('目录导入成功', 'success');
+          await scanDirectories();
+          await loadDirectories();
+        } else {
+          toast('导入失败: ' + (data.error || '未知错误'), 'error');
+        }
+      } catch(e) {
+        toast('导入失败: ' + e.message, 'error');
+      }
+    }
 
     async function createDirectory() {
       const name = document.getElementById('new-dir-name').value.trim();

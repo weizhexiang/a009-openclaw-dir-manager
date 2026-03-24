@@ -296,26 +296,16 @@ function getModules(suffix) {
   const dirPath = getDirectoryPath(suffix);
   const modules = [];
 
-  const items = [
-    { name: 'agents', type: 'directory' },
-    { name: 'skills', type: 'directory' },
-    { name: 'agency-agents', type: 'directory' },
-    { name: 'canvas', type: 'directory' },
-    { name: 'cron', type: 'directory' },
-    { name: 'devices', type: 'directory' },
-    { name: 'logs', type: 'directory' },
-    { name: 'vault', type: 'directory' },
-    { name: 'openclaw.json', type: 'file' },
-    { name: 'update-check.json', type: 'file' }
-  ];
+  // 检查常见模块
+  const moduleNames = ['agents', 'skills', 'agency-agents', 'canvas', 'cron', 'devices', 'logs', 'vault'];
 
-  items.forEach(item => {
-    const itemPath = path.join(dirPath, item.name);
-    if (fs.existsSync(itemPath)) {
-      const stat = fs.statSync(itemPath);
+  moduleNames.forEach(name => {
+    const modulePath = path.join(dirPath, name);
+    if (fs.existsSync(modulePath)) {
+      const stat = fs.statSync(modulePath);
       modules.push({
-        name: item.name,
-        type: item.type,
+        name: name,
+        type: fs.statSync(modulePath).isDirectory() ? 'directory' : 'file',
         size: stat.size,
         modified: stat.mtime
       });
@@ -336,13 +326,12 @@ function copyModules(sourceSuffix, targetSuffix, modules) {
   const sourcePath = getDirectoryPath(sourceSuffix);
   const targetPath = getDirectoryPath(targetSuffix);
 
-  // 检查目标目录是否存在
   if (!fs.existsSync(targetPath)) {
     return { success: false, error: 'Target directory does not exist' };
   }
 
-  let copied = [];
-  let failed = [];
+  const copied = [];
+  const failed = [];
 
   modules.forEach(moduleName => {
     const src = path.join(sourcePath, moduleName);
@@ -355,7 +344,6 @@ function copyModules(sourceSuffix, targetSuffix, modules) {
 
     try {
       if (fs.statSync(src).isDirectory()) {
-        // 如果目标存在，先删除
         if (fs.existsSync(dest)) {
           fs.rmSync(dest, { recursive: true });
         }
@@ -373,6 +361,98 @@ function copyModules(sourceSuffix, targetSuffix, modules) {
     success: failed.length === 0,
     copied,
     failed
+  };
+}
+
+/**
+ * 扫描并导入已有目录
+ * @returns {object} - 可导入的目录列表
+ */
+function scanExistingDirectories() {
+  const homeDir = HOME_DIR;
+  const existingDirs = [];
+
+  // 扫描所有 .openclaw-* 格式的目录
+  const entries = fs.readdirSync(homeDir, { withFileTypes: true });
+
+  entries.forEach(entry => {
+    const name = entry.name;
+    if (name.startsWith('.openclaw') && entry.isDirectory()) {
+      // 跳过备份目录
+      if (name === '.openclaw-backups') return;
+
+      const fullPath = path.join(homeDir, name);
+
+      // 提取 suffix
+      let suffix = '';
+      if (name === '.openclaw') {
+        suffix = '';
+      } else if (name.startsWith('.openclaw-')) {
+        suffix = name.replace('.openclaw-', '');
+      }
+
+      if (suffix !== '') {
+        // 检查是否已在注册表中
+        const registry = readRegistry();
+        const alreadyRegistered = registry.directories.some(d => d.suffix === suffix);
+
+        if (!alreadyRegistered) {
+          // 检查是否包含 openclaw.json
+          const configPath = path.join(fullPath, 'openclaw.json');
+          if (fs.existsSync(configPath)) {
+            existingDirs.push({
+              suffix: suffix,
+              name: name.replace('.openclaw', '').replace('-', ''),
+              path: fullPath,
+              status: 'stopped'
+            });
+          }
+        }
+      }
+    }
+  });
+
+  return existingDirs;
+}
+
+/**
+ * 导入已有目录
+ * @param {string} suffix - 目录后缀 (空字符串表示默认目录)
+ * @param {string} name - 目录名称
+ * @returns {object} - 导入结果
+ */
+function importDirectory(suffix, name) {
+  const registry = readRegistry();
+
+  // 检查是否已存在
+  const exists = registry.directories.some(d => d.suffix === suffix);
+  if (exists) {
+    return { success: false, error: 'Directory already registered' };
+  }
+
+  const dirPath = getDirectoryPath(suffix);
+
+  if (!fs.existsSync(dirPath)) {
+    return { success: false, error: 'Directory does not exist' };
+  }
+
+  // 添加到注册表
+  const dirInfo = {
+    suffix: suffix,
+    name: name,
+    path: dirPath,
+    port: getPort(suffix),
+    createdAt: new Date().toISOString(),
+    templateFrom: null,
+    status: 'stopped'
+  };
+
+  registry.directories.push(dirInfo);
+  writeRegistry(registry);
+
+  return {
+    success: true,
+    directory: dirInfo
   };
 }
 
@@ -1109,6 +1189,14 @@ const API_HANDLERS = {
   'DELETE /api/directories/:id/backups/:file': (params) => deleteBackup(params.id, params.file),
 
   'GET /api/github/repos': () => ({ repos: getDeployableRepos() }),
+
+  // 导入目录相关 API
+  'GET /api/directories/scan': () => ({ directories: scanExistingDirectories() }),
+
+  'POST /api/directories/import': (params, body) => {
+    const { suffix, name } = body;
+    return importDirectory(suffix, name);
+  },
 
   'POST /api/github/deploy': (params, body) => {
     const { repoId, targetDir, branch } = body;
