@@ -1213,10 +1213,10 @@ const server = http.createServer((req, res) => {
       try {
         const parsedBody = body ? JSON.parse(body) : {};
         const result = await Promise.resolve(matched.handler(matched.params, parsedBody));
-        res.writeHead(200, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...CORS_HEADERS });
         res.end(JSON.stringify(result));
       } catch (e) {
-        res.writeHead(500, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8', ...CORS_HEADERS });
         res.end(JSON.stringify({ success: false, error: e.message }));
       }
     });
@@ -1224,7 +1224,7 @@ const server = http.createServer((req, res) => {
   }
 
   // 404 处理
-  res.writeHead(404, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+  res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8', ...CORS_HEADERS });
   res.end(JSON.stringify({ success: false, error: 'Not found' }));
 });
 
