@@ -622,6 +622,8 @@
       document.getElementById('dirs-stats').textContent = '共 ' + directoriesData.length + ' 个目录';
 
       directoriesData.forEach(dir => {
+        const statusClass = dir.status === 'running' ? 'status-running' : 'status-stopped';
+        const statusText = dir.status === 'running' ? '运行中' : '已停止';
         tbody.innerHTML += '<tr>' +
           '<td>' + (dir.displayName || dir.name) + '</td>' +
           '<td style="font-family:monospace;font-size:12px;">' + dir.path + '</td>' +
@@ -629,9 +631,12 @@
           '<td>' + (dir.size || '-') + '</td>' +
           '<td>' + (dir.lastBackup || '<span style="color:#666;">从未备份</span>') + '</td>' +
           '<td>' +
+            '<span class="status-badge ' + statusClass + '">' + statusText + '</span> ' +
+            '<button class="btn btn-success btn-small" onclick="startDirectory(\'' + dir.suffix + '\')">启动</button> ' +
+            '<button class="btn btn-secondary btn-small" onclick="stopDirectory(\'' + dir.suffix + '\')">停止</button> ' +
             '<button class="btn btn-secondary btn-small" onclick="editDirectory(\'' + dir.suffix + '\')">编辑</button> ' +
-            '<button class="btn btn-warning btn-small" onclick="removeDirectory(\'' + dir.suffix + '\')">从列表移除此目录</button> ' +
-            '<button class="btn btn-danger btn-small" onclick="deleteDirectory(\'' + dir.suffix + '\')">删除此目录</button>' +
+            '<button class="btn btn-warning btn-small" onclick="removeDirectory(\'' + dir.suffix + '\')">移除</button> ' +
+            '<button class="btn btn-danger btn-small" onclick="deleteDirectory(\'' + dir.suffix + '\')">删除</button>' +
           '</td>' +
         '</tr>';
       });

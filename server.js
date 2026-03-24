@@ -258,6 +258,7 @@ function getDirectories() {
   const registry = readRegistry();
   return registry.directories.map(dir => ({
     ...dir,
+    status: getDirectoryStatus(dir.suffix),
     size: getDirectorySize(dir.path),
     lastBackup: getLastBackupTime(dir.suffix)
   }));
@@ -878,8 +879,8 @@ function startDirectory(suffix) {
     // 将 Windows 路径转换为 WSL 路径
     const wslDirPath = dirPath.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, drive) => `/mnt/${drive.toLowerCase()}`);
 
-    // 使用 wsl 命令启动 openclaw gateway
-    const wslCmd = `cd ${wslDirPath} && openclaw gateway --port ${port}`;
+    // 使用 wsl 命令启动 openclaw gateway，使用 --home 参数指定数据目录
+    const wslCmd = `openclaw gateway --port ${port} --home ${wslDirPath}`;
     console.log(`Starting OpenClaw via WSL: wsl -e bash -c "${wslCmd}"`);
 
     child = spawn('wsl', ['-e', 'bash', '-c', wslCmd], {
@@ -905,11 +906,10 @@ function startDirectory(suffix) {
       }
     }
 
-    // 使用 sh -c 确保参数正确传递
-    const cmd = `openclaw gateway --port ${port}`;
+    // 使用 sh -c 确保参数正确传递，使用 --home 参数指定数据目录
+    const cmd = `openclaw gateway --port ${port} --home ${dirPath}`;
     console.log(`Starting OpenClaw with shell: ${cmd}`);
     child = spawn('sh', ['-c', cmd], {
-      cwd: dirPath,
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env }
