@@ -189,8 +189,8 @@ function getDirectories() {
 function createDirectory(name, templateSuffix = null, modules = []) {
   const registry = readRegistry();
 
-  // 生成新的 suffix
-  const suffix = registry.nextSuffix;
+  // 生成新的 suffix - 转换为字符串
+  const suffix = String(registry.nextSuffix);
   const dirPath = getDirectoryPath(suffix);
 
   // 创建目录
@@ -256,8 +256,8 @@ function createDirectory(name, templateSuffix = null, modules = []) {
 function deleteDirectory(suffix) {
   const registry = readRegistry();
 
-  // 查找目录
-  const dirIndex = registry.directories.findIndex(d => d.suffix === suffix);
+  // 查找目录 - 修复类型比较
+  const dirIndex = registry.directories.findIndex(d => String(d.suffix) === String(suffix));
   if (dirIndex === -1) {
     throw new Error(`Directory with suffix ${suffix} not found`);
   }
