@@ -624,14 +624,19 @@
       directoriesData.forEach(dir => {
         const statusClass = dir.status === 'running' ? 'status-running' : 'status-stopped';
         const statusText = dir.status === 'running' ? '运行中' : '已停止';
+        const gatewayUrl = dir.port ? `http://localhost:${dir.port}` : null;
+        const token = dir.token || '';
+
         tbody.innerHTML += '<tr>' +
           '<td>' + (dir.displayName || dir.name) + '</td>' +
           '<td style="font-family:monospace;font-size:12px;">' + dir.path + '</td>' +
           '<td>' + (dir.port || '-') + '</td>' +
           '<td>' + (dir.size || '-') + '</td>' +
           '<td>' + (dir.lastBackup || '<span style="color:#666;">从未备份</span>') + '</td>' +
-          '<td>' +
+          '<td style="white-space:nowrap;">' +
             '<span class="status-badge ' + statusClass + '">' + statusText + '</span> ' +
+            (gatewayUrl && dir.status === 'running' ? '<a href="' + gatewayUrl + '" target="_blank" class="btn btn-success btn-small" style="text-decoration:none;">🌐 访问</a> ' : '') +
+            (token ? '<button class="btn btn-secondary btn-small" onclick="copyDirectoryToken(\'' + token + '\')" title="Token: ' + token + '">📋 Token</button> ' : '') +
             '<button class="btn btn-success btn-small" onclick="startDirectory(\'' + dir.suffix + '\')">启动</button> ' +
             '<button class="btn btn-secondary btn-small" onclick="stopDirectory(\'' + dir.suffix + '\')">停止</button> ' +
             '<button class="btn btn-secondary btn-small" onclick="editDirectory(\'' + dir.suffix + '\')">编辑</button> ' +
@@ -639,6 +644,19 @@
             '<button class="btn btn-danger btn-small" onclick="deleteDirectory(\'' + dir.suffix + '\')">删除</button>' +
           '</td>' +
         '</tr>';
+      });
+    }
+
+    // 复制目录的 Gateway Token
+    function copyDirectoryToken(token) {
+      if (!token) {
+        toast('该目录没有配置 Token', 'error');
+        return;
+      }
+      navigator.clipboard.writeText(token).then(() => {
+        toast('Token 已复制: ' + token);
+      }).catch(e => {
+        toast('复制失败: ' + e.message, 'error');
       });
     }
 

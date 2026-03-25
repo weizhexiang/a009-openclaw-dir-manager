@@ -94,6 +94,39 @@ function getDirectoryPath(suffix) {
 }
 
 /**
+ * 生成唯一的 Gateway Token
+ * @param {string|number} suffix - 目录后缀
+ * @returns {string} - 生成的 token
+ */
+function generateGatewayToken(suffix) {
+  const crypto = require('crypto');
+  const hash = crypto.createHash('sha256');
+  hash.update(`openclaw-${suffix || 'default'}-${Date.now()}`);
+  return 'oc-' + hash.digest('hex').substring(0, 16);
+}
+
+/**
+ * 获取目录的 Gateway Token
+ * @param {string|number} suffix - 目录后缀
+ * @returns {string|null} - token 或 null
+ */
+function getDirectoryToken(suffix) {
+  const dirPath = getDirectoryPath(suffix);
+  const configPath = path.join(dirPath, 'openclaw.json');
+
+  if (!fs.existsSync(configPath)) {
+    return null;
+  }
+
+  try {
+    const config = readJson(configPath);
+    return config?.gateway?.auth?.token || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
  * 获取端口
  * @param {string|number} suffix - 目录后缀
  * @returns {number} - 端口号
@@ -260,7 +293,8 @@ function getDirectories() {
     ...dir,
     status: getDirectoryStatus(dir.suffix),
     size: getDirectorySize(dir.path),
-    lastBackup: getLastBackupTime(dir.suffix)
+    lastBackup: getLastBackupTime(dir.suffix),
+    token: getDirectoryToken(dir.suffix)
   }));
 }
 
@@ -328,8 +362,9 @@ function createDirectory(name, options = {}) {
     }
   }
 
-  // 创建基础 openclaw.json 配置
+  // 创建基础 openclaw.json 配置（包含唯一的 gateway token）
   const configPath = path.join(dirPath, 'openclaw.json');
+  const gatewayToken = generateGatewayToken(suffix);
   const baseConfig = {
     meta: {
       lastTouchedVersion: '2026.3.1',
@@ -338,7 +373,22 @@ function createDirectory(name, options = {}) {
     auth: { profiles: {} },
     models: { mode: 'merge', providers: {} },
     agents: { list: [], defaults: {} },
-    bindings: []
+    bindings: [],
+    gateway: {
+      port: port,
+      mode: 'local',
+      bind: 'lan',
+      controlUi: {
+        allowedOrigins: [
+          `http://localhost:${port}`,
+          `http://127.0.0.1:${port}`
+        ]
+      },
+      auth: {
+        mode: 'token',
+        token: gatewayToken
+      }
+    }
   };
   writeJson(configPath, baseConfig);
 
@@ -879,11 +929,14 @@ function startDirectory(suffix) {
     // 将 Windows 路径转换为 WSL 路径
     const wslDirPath = dirPath.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, drive) => `/mnt/${drive.toLowerCase()}`);
 
-    // 使用 wsl 命令启动 openclaw gateway，使用 --home 参数指定数据目录
-    const wslCmd = `openclaw gateway --port ${port} --home ${wslDirPath}`;
-    console.log(`Starting OpenClaw via WSL: wsl -e bash -c "${wslCmd}"`);
+    // 使用 wsl 命令启动 openclaw gateway
+    // 使用 bash -l 加载 nvm 环境
+    // 使用 export 设置 OPENCLAW_STATE_DIR 环境变量
+    // 使用 --force 参数强制使用指定端口
+    const wslCmd = `source ~/.nvm/nvm.sh && nvm use 22 >/dev/null && export OPENCLAW_STATE_DIR="${wslDirPath}" && openclaw gateway run --port ${port} --force`;
+    console.log(`Starting OpenClaw via WSL: wsl -e bash -l -c "${wslCmd}"`);
 
-    child = spawn('wsl', ['-e', 'bash', '-c', wslCmd], {
+    child = spawn('wsl', ['-e', 'bash', '-l', '-c', wslCmd], {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
@@ -906,8 +959,10 @@ function startDirectory(suffix) {
       }
     }
 
-    // 使用 bash -l -c 确保加载 nvm 环境，使用 --home 参数指定数据目录
-    const cmd = `openclaw gateway --port ${port} --home ${dirPath}`;
+    // 使用 bash -l -c 确保加载 nvm 环境
+    // 使用 export 设置 OPENCLAW_STATE_DIR 环境变量
+    // 使用 --force 参数强制使用指定端口
+    const cmd = `export OPENCLAW_STATE_DIR="${dirPath}" && openclaw gateway run --port ${port} --force`;
     console.log(`Starting OpenClaw with shell: ${cmd}`);
     child = spawn('bash', ['-l', '-c', cmd], {
       detached: true,
@@ -1551,6 +1606,17 @@ const API_HANDLERS = {
   'PUT /api/directories/:id': (params, body) => updateDirectory(params.id, body),
 
   'GET /api/directories/:id': (params) => getDirectoryInfo(params.id),
+
+  'GET /api/directories/:id/token': (params) => {
+    const token = getDirectoryToken(params.id);
+    const port = getPort(params.id);
+    return {
+      success: true,
+      token: token,
+      port: port,
+      url: token ? `http://localhost:${port}` : null
+    };
+  },
 
   'POST /api/directories/:id/start': (params) => startDirectory(params.id),
 
