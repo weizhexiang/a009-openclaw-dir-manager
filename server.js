@@ -106,6 +106,164 @@ function generateGatewayToken(suffix) {
 }
 
 /**
+ * 清理新创建目录中的引用和数据
+ * 1. 替换路径引用: ~/.openclaw/ → ~/.openclaw-{suffix}/
+ * 2. 清空会话数据: sessions/, memory/
+ * 3. 清空凭证: credentials/
+ * 4. 清空配置: bindings, channels.discord.guilds/accounts, agents.list
+ * @param {string} dirPath - 目录路径
+ * @param {string|number} suffix - 目录后缀
+ */
+function cleanNewDirectory(dirPath, suffix) {
+  const newSuffix = suffix || 'default';
+  const newPath = newSuffix === 'default' ? '~/.openclaw' : `~/.openclaw-${newSuffix}`;
+  const newAbsPath = newSuffix === 'default'
+    ? path.join(HOME_DIR, '.openclaw')
+    : path.join(HOME_DIR, `.openclaw-${newSuffix}`);
+
+  // 1. 替换配置文件中的路径引用
+  const configPath = path.join(dirPath, 'openclaw.json');
+  if (fs.existsSync(configPath)) {
+    let content = fs.readFileSync(configPath, 'utf8');
+
+    // 替换绝对路径
+    content = content.replace(/\/home\/[^/]+\/\.openclaw\//g, `${newAbsPath}/`);
+    content = content.replace(/\/home\/[^/]+\/\.openclaw"/g, `${newAbsPath}"`);
+
+    // 替换波浪号路径
+    content = content.replace(/~\/\.openclaw\//g, `${newPath}/`);
+
+    try {
+      let config = JSON.parse(content);
+
+      // 2. 清空 agents.list 中的 workspace 引用（保留配置模板但指向新路径）
+      if (config.agents && config.agents.list) {
+        config.agents.list = [];
+      }
+
+      // 3. 清空 bindings
+      config.bindings = [];
+
+      // 4. 清空 channels.discord 配置
+      if (config.channels && config.channels.discord) {
+        config.channels.discord.guilds = {};
+        config.channels.discord.accounts = {};
+      }
+
+      // 5. 更新 gateway 配置中的端口
+      const port = getPort(suffix);
+      if (config.gateway) {
+        config.gateway.port = port;
+        config.gateway.controlUi = {
+          allowedOrigins: [
+            `http://localhost:${port}`,
+            `http://127.0.0.1:${port}`
+          ]
+        };
+        // 生成新的 token
+        const gatewayToken = generateGatewayToken(suffix);
+        config.gateway.auth = {
+          mode: 'token',
+          token: gatewayToken
+        };
+      }
+
+      writeJson(configPath, config);
+    } catch (e) {
+      console.error('Failed to parse/update config:', e.message);
+    }
+  }
+
+  // 6. 清空 credentials 目录
+  const credentialsPath = path.join(dirPath, 'credentials');
+  if (fs.existsSync(credentialsPath)) {
+    const files = fs.readdirSync(credentialsPath);
+    files.forEach(f => {
+      const filePath = path.join(credentialsPath, f);
+      if (fs.statSync(filePath).isFile()) {
+        fs.unlinkSync(filePath);
+      }
+    });
+  }
+
+  // 7. 清空 agents 目录下的会话数据
+  const agentsPath = path.join(dirPath, 'agents');
+  if (fs.existsSync(agentsPath)) {
+    const agentDirs = fs.readdirSync(agentsPath, { withFileTypes: true })
+      .filter(e => e.isDirectory())
+      .map(e => e.name);
+
+    agentDirs.forEach(agentName => {
+      const agentPath = path.join(agentsPath, agentName);
+
+      // 清空 sessions 目录
+      const sessionsPath = path.join(agentPath, 'sessions');
+      if (fs.existsSync(sessionsPath)) {
+        const sessionFiles = fs.readdirSync(sessionsPath);
+        sessionFiles.forEach(f => {
+          const filePath = path.join(sessionsPath, f);
+          if (fs.statSync(filePath).isFile()) {
+            fs.unlinkSync(filePath);
+          }
+        });
+      }
+
+      // 清空 memory 目录
+      const memoryPath = path.join(agentPath, 'memory');
+      if (fs.existsSync(memoryPath)) {
+        const memoryFiles = fs.readdirSync(memoryPath);
+        memoryFiles.forEach(f => {
+          const filePath = path.join(memoryPath, f);
+          if (fs.statSync(filePath).isFile()) {
+            fs.unlinkSync(filePath);
+          }
+        });
+      }
+
+      // 清空 .openclaw 目录
+      const openclawPath = path.join(agentPath, '.openclaw');
+      if (fs.existsSync(openclawPath)) {
+        const ocFiles = fs.readdirSync(openclawPath);
+        ocFiles.forEach(f => {
+          const filePath = path.join(openclawPath, f);
+          if (fs.statSync(filePath).isFile()) {
+            fs.unlinkSync(filePath);
+          }
+        });
+      }
+
+      // 替换 bootstrap.md 中的路径引用
+      const bootstrapPath = path.join(agentPath, 'agent', 'bootstrap.md');
+      if (fs.existsSync(bootstrapPath)) {
+        let content = fs.readFileSync(bootstrapPath, 'utf8');
+        content = content.replace(/~\/\.openclaw\//g, `${newPath}/`);
+        fs.writeFileSync(bootstrapPath, content, 'utf8');
+      }
+    });
+
+    // 替换 shared/work-guidelines.md 中的路径引用
+    const guidelinesPath = path.join(agentsPath, 'shared', 'work-guidelines.md');
+    if (fs.existsSync(guidelinesPath)) {
+      let content = fs.readFileSync(guidelinesPath, 'utf8');
+      content = content.replace(/~\/\.openclaw\//g, `${newPath}/`);
+      fs.writeFileSync(guidelinesPath, content, 'utf8');
+    }
+  }
+
+  // 8. 清空 devices 目录下的配对数据
+  const devicesPath = path.join(dirPath, 'devices');
+  if (fs.existsSync(devicesPath)) {
+    const deviceFiles = ['pending.json', 'paired.json', 'approved.json'];
+    deviceFiles.forEach(f => {
+      const filePath = path.join(devicesPath, f);
+      if (fs.existsSync(filePath)) {
+        writeJson(filePath, {});
+      }
+    });
+  }
+}
+
+/**
  * 获取目录的 Gateway Token
  * @param {string|number} suffix - 目录后缀
  * @returns {string|null} - token 或 null
@@ -359,38 +517,81 @@ function createDirectory(name, options = {}) {
           fs.cpSync(srcModule, destModule, { recursive: true });
         }
       });
+    } else {
+      // 如果没有指定模块，复制所有内容
+      const entries = fs.readdirSync(templatePath, { withFileTypes: true });
+      entries.forEach(entry => {
+        const srcPath = path.join(templatePath, entry.name);
+        const destPath = path.join(dirPath, entry.name);
+        if (entry.isDirectory()) {
+          fs.cpSync(srcPath, destPath, { recursive: true });
+        } else {
+          fs.copyFileSync(srcPath, destPath);
+        }
+      });
     }
+
+    // 清理新目录中的引用和数据
+    cleanNewDirectory(dirPath, suffix);
   }
 
-  // 创建基础 openclaw.json 配置（包含唯一的 gateway token）
+  // 创建或更新 openclaw.json 配置（包含唯一的 gateway token）
   const configPath = path.join(dirPath, 'openclaw.json');
   const gatewayToken = generateGatewayToken(suffix);
-  const baseConfig = {
-    meta: {
-      lastTouchedVersion: '2026.3.1',
-      lastTouchedAt: new Date().toISOString()
-    },
-    auth: { profiles: {} },
-    models: { mode: 'merge', providers: {} },
-    agents: { list: [], defaults: {} },
-    bindings: [],
-    gateway: {
-      port: port,
-      mode: 'local',
-      bind: 'lan',
-      controlUi: {
+
+  if (fs.existsSync(configPath)) {
+    // 如果配置文件已存在（从模板复制），只更新必要字段
+    const existingConfig = readJson(configPath);
+    if (existingConfig) {
+      existingConfig.meta = {
+        lastTouchedVersion: '2026.3.1',
+        lastTouchedAt: new Date().toISOString()
+      };
+      existingConfig.gateway = existingConfig.gateway || {};
+      existingConfig.gateway.port = port;
+      existingConfig.gateway.mode = 'local';
+      existingConfig.gateway.bind = 'lan';
+      existingConfig.gateway.controlUi = {
         allowedOrigins: [
           `http://localhost:${port}`,
           `http://127.0.0.1:${port}`
         ]
-      },
-      auth: {
+      };
+      existingConfig.gateway.auth = {
         mode: 'token',
         token: gatewayToken
-      }
+      };
+      writeJson(configPath, existingConfig);
     }
-  };
-  writeJson(configPath, baseConfig);
+  } else {
+    // 创建新的基础配置
+    const baseConfig = {
+      meta: {
+        lastTouchedVersion: '2026.3.1',
+        lastTouchedAt: new Date().toISOString()
+      },
+      auth: { profiles: {} },
+      models: { mode: 'merge', providers: {} },
+      agents: { list: [], defaults: {} },
+      bindings: [],
+      gateway: {
+        port: port,
+        mode: 'local',
+        bind: 'lan',
+        controlUi: {
+          allowedOrigins: [
+            `http://localhost:${port}`,
+            `http://127.0.0.1:${port}`
+          ]
+        },
+        auth: {
+          mode: 'token',
+          token: gatewayToken
+        }
+      }
+    };
+    writeJson(configPath, baseConfig);
+  }
 
   // 创建目录信息对象
   const dirInfo = {
