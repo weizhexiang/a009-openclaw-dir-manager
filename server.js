@@ -261,6 +261,30 @@ function cleanNewDirectory(dirPath, suffix) {
       }
     });
   }
+
+  // 9. 清空 logs 目录下的日志文件
+  const logsPath = path.join(dirPath, 'logs');
+  if (fs.existsSync(logsPath)) {
+    const logFiles = fs.readdirSync(logsPath);
+    logFiles.forEach(f => {
+      const filePath = path.join(logsPath, f);
+      if (fs.statSync(filePath).isFile()) {
+        fs.unlinkSync(filePath);
+      }
+    });
+  }
+
+  // 10. 清空 cron 目录下的任务数据
+  const cronPath = path.join(dirPath, 'cron');
+  if (fs.existsSync(cronPath)) {
+    const cronFiles = fs.readdirSync(cronPath);
+    cronFiles.forEach(f => {
+      const filePath = path.join(cronPath, f);
+      if (fs.statSync(filePath).isFile()) {
+        fs.unlinkSync(filePath);
+      }
+    });
+  }
 }
 
 /**
